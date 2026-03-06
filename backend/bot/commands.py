@@ -8,7 +8,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from backend.analysis.entity_resolver import resolve_entity
-from backend.analysis.fingerprint import build_fingerprint
+from backend.analysis.fingerprint import build_fingerprint, compare_fingerprints
 from backend.analysis.naming_engine import refresh_all_titles
 from backend.analysis.narrative import generate_dossier_narrative
 from backend.analysis.oracle import check_watches
@@ -35,6 +35,7 @@ class WitnessBot(commands.Bot):
         self.tree.add_command(profile)
         self.tree.add_command(opsec)
         self.tree.add_command(leaderboard)
+        self.tree.add_command(compare)
         await self.tree.sync()
         logger.info("Slash commands synced")
 
@@ -71,6 +72,106 @@ class WitnessBot(commands.Bot):
         logger.info(f"Witness bot online as {self.user}")
 
 
+# --- Autocomplete ---
+
+
+async def entity_autocomplete(
+    interaction: discord.Interaction,
+    current: str,
+) -> list[app_commands.Choice[str]]:
+    """Autocomplete entity names from database."""
+    if len(current) < 2:
+        return []
+    db = get_db()
+    rows = db.execute(
+        """SELECT entity_id, display_name, entity_type FROM entities
+           WHERE entity_id LIKE ? OR display_name LIKE ?
+           ORDER BY event_count DESC LIMIT 10""",
+        (f"%{current}%", f"%{current}%"),
+    ).fetchall()
+    return [
+        app_commands.Choice(
+            name=f"[{r['entity_type'][:4].upper()}] {r['display_name'] or r['entity_id'][:20]}",
+            value=r["entity_id"],
+        )
+        for r in rows
+    ]
+
+
+# --- Interactive Views ---
+
+
+class ProfileActions(discord.ui.View):
+    """Interactive buttons on profile results."""
+
+    def __init__(self, entity_id: str):
+        super().__init__(timeout=120)
+        self.entity_id = entity_id
+
+    @discord.ui.button(label="View Dossier", style=discord.ButtonStyle.primary, emoji="📜")
+    async def view_dossier(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        narrative = generate_dossier_narrative(self.entity_id)
+        embed = discord.Embed(
+            title=f"Dossier: {self.entity_id[:20]}",
+            description=narrative[:4000],
+            color=0xFF6600,
+        )
+        embed.set_footer(text="Witness — AI-generated from on-chain evidence")
+        await interaction.followup.send(embed=embed)
+
+    @discord.ui.button(label="Set Watch", style=discord.ButtonStyle.secondary, emoji="👁️")
+    async def set_watch(self, interaction: discord.Interaction, button: discord.ui.Button):
+        db = get_db()
+        db.execute(
+            """INSERT INTO watches
+               (user_id, watch_type, target_id, conditions, webhook_url, channel_id)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (
+                str(interaction.user.id),
+                "entity_movement",
+                self.entity_id,
+                json.dumps({"lookback_seconds": 300}),
+                "",
+                str(interaction.channel_id),
+            ),
+        )
+        db.commit()
+        await interaction.response.send_message(
+            f"Watch set on `{self.entity_id[:20]}` — you'll be alerted on movement.",
+            ephemeral=True,
+        )
+
+    @discord.ui.button(label="OPSEC Report", style=discord.ButtonStyle.secondary, emoji="🛡️")
+    async def opsec_report(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        db = get_db()
+        fp = build_fingerprint(db, self.entity_id)
+        if not fp or fp.event_count < 20:
+            await interaction.followup.send("Not enough data for OPSEC analysis.", ephemeral=True)
+            return
+        color = 0x00FF88 if fp.opsec_score >= 60 else 0xFFCC00 if fp.opsec_score >= 40 else 0xFF0000
+        embed = discord.Embed(
+            title=f"OPSEC Score: {self.entity_id[:16]}",
+            description=f"**{fp.opsec_score}/100** — {fp.opsec_rating}",
+            color=color,
+        )
+        t = fp.temporal
+        embed.add_field(
+            name="Time Predictability",
+            value=f"{t.peak_hour_pct:.0f}% in peak hour ({t.peak_hour:02d}:00 UTC)",
+            inline=False,
+        )
+        r = fp.route
+        embed.add_field(
+            name="Route Predictability",
+            value=f"{r.top_gate_pct:.0f}% through top gate",
+            inline=False,
+        )
+        embed.set_footer(text="Witness Oracle — Counter-Intelligence Analysis")
+        await interaction.followup.send(embed=embed)
+
+
 # --- Slash Commands ---
 
 
@@ -98,10 +199,18 @@ async def locate(interaction: discord.Interaction, entity_id: str):
     d = dossier.to_dict()
     title_str = f' "{d["titles"][0]}"' if d["titles"] else ""
 
+    danger_colors = {
+        "extreme": 0xFF0000,
+        "high": 0xFF4400,
+        "moderate": 0xFFCC00,
+        "low": 0x00FF88,
+    }
+    color = danger_colors.get(d.get("danger_rating", ""), 0xFF6600)
+
     embed = discord.Embed(
         title=f"{d['display_name']}{title_str}",
         description=f"Type: {d['entity_type']} | ID: `{d['entity_id'][:20]}`",
-        color=0xFF6600,
+        color=color,
     )
     embed.add_field(name="Events", value=str(d["event_count"]), inline=True)
     embed.add_field(name="Kills", value=str(d["kill_count"]), inline=True)
@@ -121,7 +230,17 @@ async def locate(interaction: discord.Interaction, entity_id: str):
     if d["titles"]:
         embed.add_field(name="Titles", value=", ".join(d["titles"]), inline=False)
 
-    embed.set_footer(text="Witness — The Living Memory of EVE Frontier")
+    first_seen = d.get("first_seen", 0)
+    last_seen = d.get("last_seen", 0)
+    if first_seen and last_seen:
+        embed.set_footer(
+            text=(
+                f"First seen: {time.strftime('%Y-%m-%d %H:%M', time.gmtime(first_seen))} UTC"
+                f" | Last seen: {time.strftime('%Y-%m-%d %H:%M', time.gmtime(last_seen))} UTC"
+            )
+        )
+    else:
+        embed.set_footer(text="Witness — The Living Memory of EVE Frontier")
     await interaction.followup.send(embed=embed)
 
 
@@ -296,7 +415,7 @@ async def profile(interaction: discord.Interaction, entity_id: str):
             inline=False,
         )
     embed.set_footer(text="Witness — Behavioral Intelligence")
-    await interaction.followup.send(embed=embed)
+    await interaction.followup.send(embed=embed, view=ProfileActions(entity_id))
 
 
 @app_commands.command(
@@ -405,6 +524,88 @@ async def leaderboard(interaction: discord.Interaction, category: str = "most_ac
         color=0xFF6600,
     )
     await interaction.response.send_message(embed=embed)
+
+
+@app_commands.command(
+    name="compare",
+    description="Compare two entity fingerprints for alt detection",
+)
+@app_commands.describe(
+    entity_1="First entity ID",
+    entity_2="Second entity ID",
+)
+async def compare(interaction: discord.Interaction, entity_1: str, entity_2: str):
+    await interaction.response.defer()
+    db = get_db()
+    fp1 = build_fingerprint(db, entity_1)
+    fp2 = build_fingerprint(db, entity_2)
+    if not fp1:
+        await interaction.followup.send(f"Entity `{entity_1[:20]}` not found.", ephemeral=True)
+        return
+    if not fp2:
+        await interaction.followup.send(f"Entity `{entity_2[:20]}` not found.", ephemeral=True)
+        return
+
+    result = compare_fingerprints(fp1, fp2)
+
+    overall = result["overall_similarity"]
+    color = 0xFF0000 if overall > 0.7 else 0xFFCC00 if overall > 0.4 else 0x00FF88
+
+    embed = discord.Embed(
+        title="Fingerprint Comparison",
+        description=(
+            f"`{entity_1[:16]}` vs `{entity_2[:16]}`\n**Overall Similarity: {overall:.1%}**"
+        ),
+        color=color,
+    )
+    embed.add_field(name="Temporal", value=f"{result['temporal_similarity']:.1%}", inline=True)
+    embed.add_field(name="Route", value=f"{result['route_similarity']:.1%}", inline=True)
+    embed.add_field(name="Social", value=f"{result['social_similarity']:.1%}", inline=True)
+
+    verdicts = []
+    if result["likely_alt"]:
+        verdicts.append("⚠️ **LIKELY ALT ACCOUNT**")
+    if result["likely_fleet_mate"]:
+        verdicts.append("🤝 **LIKELY FLEET MATE**")
+    if not verdicts:
+        verdicts.append("✅ Distinct entities")
+
+    embed.add_field(name="Verdict", value="\n".join(verdicts), inline=False)
+    embed.set_footer(text="Witness — Behavioral Intelligence")
+    await interaction.followup.send(embed=embed)
+
+
+# --- Autocomplete bindings ---
+
+
+@locate.autocomplete("entity_id")
+async def locate_entity_autocomplete(interaction: discord.Interaction, current: str):
+    return await entity_autocomplete(interaction, current)
+
+
+@profile.autocomplete("entity_id")
+async def profile_entity_autocomplete(interaction: discord.Interaction, current: str):
+    return await entity_autocomplete(interaction, current)
+
+
+@opsec.autocomplete("entity_id")
+async def opsec_entity_autocomplete(interaction: discord.Interaction, current: str):
+    return await entity_autocomplete(interaction, current)
+
+
+@history.autocomplete("entity_id")
+async def history_entity_autocomplete(interaction: discord.Interaction, current: str):
+    return await entity_autocomplete(interaction, current)
+
+
+@compare.autocomplete("entity_1")
+async def compare_entity1_autocomplete(interaction: discord.Interaction, current: str):
+    return await entity_autocomplete(interaction, current)
+
+
+@compare.autocomplete("entity_2")
+async def compare_entity2_autocomplete(interaction: discord.Interaction, current: str):
+    return await entity_autocomplete(interaction, current)
 
 
 def run_bot():

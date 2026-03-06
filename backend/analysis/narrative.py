@@ -101,8 +101,74 @@ def _store_cache(db, entity_id: str, narrative_type: str, event_hash: str, conte
     db.commit()
 
 
+def _template_narrative(profile: dict) -> str:
+    """Generate a template-based narrative when no AI API key is available."""
+    d = profile
+    name = d.get("display_name") or d.get("entity_id", "Unknown")[:16]
+    etype = d.get("entity_type", "entity")
+    events = d.get("event_count", 0)
+    kills = d.get("kill_count", 0)
+    deaths = d.get("death_count", 0)
+    gates = d.get("gate_count", 0)
+    titles = d.get("titles", [])
+    danger = d.get("danger_rating", "unknown")
+
+    parts = []
+
+    if etype == "character":
+        title_str = f', known as "{titles[0]}"' if titles else ""
+        parts.append(
+            f"{name}{title_str} has been observed across the frontier with "
+            f"{events} recorded events. Their on-chain footprint spans "
+            f"{gates} gate transits, {kills} confirmed kills, and {deaths} losses."
+        )
+        if kills > deaths and kills > 5:
+            parts.append(
+                f"Analysis marks this pilot as a significant combat threat "
+                f"(danger rating: {danger}). Their kill-to-death ratio suggests "
+                f"a seasoned hunter who chooses engagements carefully."
+            )
+        elif deaths > kills and deaths > 3:
+            parts.append(
+                "This pilot has suffered more losses than victories, suggesting "
+                "either a trader navigating dangerous space or a pilot still "
+                "learning the harsh realities of the frontier."
+            )
+        elif kills == 0 and deaths == 0 and gates > 20:
+            parts.append(
+                f"No combat record exists for this entity. With {gates} gate "
+                f"transits and zero engagements, this appears to be a ghost — "
+                f"moving through the frontier without leaving a mark."
+            )
+        else:
+            parts.append(
+                "Their activity pattern suggests a balanced operator, neither "
+                "pure combatant nor pure trader."
+            )
+    elif etype == "gate":
+        parts.append(f"Gate {name} has channeled {events} transits through its structure. ")
+        if kills > 5:
+            parts.append(
+                f"With {kills} recorded kills in the vicinity, this gate has earned "
+                f"its reputation as contested space. Pilots transiting here should "
+                f"exercise caution."
+            )
+        else:
+            parts.append(
+                "Traffic flows relatively peacefully through this passage, though "
+                "the frontier is never truly safe."
+            )
+    else:
+        parts.append(f"{name} — {events} events recorded on-chain.")
+
+    if titles:
+        parts.append(f"Earned titles: {', '.join(titles)}.")
+
+    return "\n\n".join(parts)
+
+
 def generate_dossier_narrative(entity_id: str) -> str:
-    """Generate an AI-written dossier entry for an entity."""
+    """Generate a dossier entry for an entity. Uses AI when available, templates otherwise."""
     db = get_db()
     dossier = resolve_entity(db, entity_id)
     if not dossier:
@@ -125,14 +191,21 @@ def generate_dossier_narrative(entity_id: str) -> str:
     events.sort(key=lambda e: e.get("timestamp", 0))
     events = events[-50:]  # Last 50
 
-    # Check cache
     profile_data = dossier.to_dict()
+
+    # Check cache
     eh = _event_hash({"profile": profile_data, "events": events})
     cached = _get_cached(db, entity_id, "dossier", eh)
     if cached:
         return cached
 
-    # Generate
+    # Fallback to template narrative if no API key
+    if not settings.ANTHROPIC_API_KEY:
+        content = _template_narrative(profile_data)
+        _store_cache(db, entity_id, "dossier", eh, content)
+        return content
+
+    # Generate with AI
     try:
         client = _get_client()
         # Strip raw_json from events to save tokens
@@ -160,7 +233,7 @@ def generate_dossier_narrative(entity_id: str) -> str:
         return f"Narrative unavailable: {e}"
     except Exception as e:
         logger.error(f"Narrative generation failed: {e}")
-        return "Narrative generation temporarily unavailable."
+        return _template_narrative(profile_data)
 
 
 def generate_battle_report(events: list[dict]) -> dict:

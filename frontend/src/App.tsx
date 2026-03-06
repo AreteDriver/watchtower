@@ -2,18 +2,28 @@ import { useState } from 'react';
 import { api, Fingerprint } from './api';
 import { SearchBar } from './components/SearchBar';
 import { FingerprintCard } from './components/FingerprintCard';
+import { ActivityHeatmap } from './components/ActivityHeatmap';
+import { EntityTimeline } from './components/EntityTimeline';
+import { NarrativePanel } from './components/NarrativePanel';
+import { CompareView } from './components/CompareView';
 import { StoryFeed } from './components/StoryFeed';
 import { Leaderboard } from './components/Leaderboard';
 import { HealthBanner } from './components/HealthBanner';
+
+type Tab = 'intel' | 'compare' | 'feed';
 
 function App() {
   const [fingerprint, setFingerprint] = useState<Fingerprint | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [activeTab, setActiveTab] = useState<Tab>('intel');
+  const [selectedEntity, setSelectedEntity] = useState('');
 
   const loadEntity = async (entityId: string) => {
     setLoading(true);
     setError('');
+    setSelectedEntity(entityId);
+    setActiveTab('intel');
     try {
       const fp = await api.fingerprint(entityId);
       setFingerprint(fp);
@@ -23,6 +33,12 @@ function App() {
     }
     setLoading(false);
   };
+
+  const tabs: { key: Tab; label: string }[] = [
+    { key: 'intel', label: 'Intelligence' },
+    { key: 'compare', label: 'Compare' },
+    { key: 'feed', label: 'Feed & Rankings' },
+  ];
 
   return (
     <div className="min-h-screen">
@@ -46,6 +62,23 @@ function App() {
           <SearchBar onSelect={loadEntity} />
         </div>
 
+        {/* Tabs */}
+        <div className="flex gap-1 border-b border-[var(--eve-border)]">
+          {tabs.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`px-4 py-2 text-sm font-bold transition-colors ${
+                activeTab === tab.key
+                  ? 'text-[var(--eve-green)] border-b-2 border-[var(--eve-green)]'
+                  : 'text-[var(--eve-dim)] hover:text-[var(--eve-text)]'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
         {/* Error */}
         {error && (
           <div className="text-[var(--eve-red)] text-sm bg-red-900/20 border border-red-900/40 rounded px-4 py-2">
@@ -56,14 +89,39 @@ function App() {
         {/* Loading */}
         {loading && <div className="text-[var(--eve-dim)]">Analyzing...</div>}
 
-        {/* Fingerprint */}
-        {fingerprint && !loading && <FingerprintCard fp={fingerprint} />}
+        {/* Tab Content */}
+        {activeTab === 'intel' && (
+          <div className="space-y-6">
+            {fingerprint && !loading && (
+              <>
+                <FingerprintCard fp={fingerprint} />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="bg-[var(--eve-surface)] border border-[var(--eve-border)] rounded-lg p-4 space-y-4">
+                    <ActivityHeatmap entityId={selectedEntity} />
+                    <EntityTimeline entityId={selectedEntity} />
+                  </div>
+                  <NarrativePanel entityId={selectedEntity} />
+                </div>
+              </>
+            )}
+            {!fingerprint && !loading && !error && (
+              <div className="text-center py-12 text-[var(--eve-dim)]">
+                Search for an entity above to view their behavioral profile.
+              </div>
+            )}
+          </div>
+        )}
 
-        {/* Bottom panels */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <StoryFeed />
-          <Leaderboard onSelect={loadEntity} />
-        </div>
+        {activeTab === 'compare' && (
+          <CompareView initialEntity={selectedEntity} onSelect={loadEntity} />
+        )}
+
+        {activeTab === 'feed' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <StoryFeed />
+            <Leaderboard onSelect={loadEntity} />
+          </div>
+        )}
       </main>
 
       {/* Footer */}

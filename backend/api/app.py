@@ -2,9 +2,12 @@
 
 import asyncio
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from backend.api.routes import router
 from backend.core.logger import get_logger
@@ -49,3 +52,16 @@ app.add_middleware(
 )
 
 app.include_router(router, prefix="/api")
+
+# Serve frontend static files if built
+FRONTEND_DIR = Path(__file__).parent.parent.parent / "frontend" / "dist"
+if FRONTEND_DIR.exists():
+    app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIR / "assets")), name="assets")
+
+    @app.get("/{path:path}")
+    async def serve_frontend(path: str):
+        """Serve React SPA — all non-API routes fall through to index.html."""
+        file = FRONTEND_DIR / path
+        if file.exists() and file.is_file():
+            return FileResponse(str(file))
+        return FileResponse(str(FRONTEND_DIR / "index.html"))

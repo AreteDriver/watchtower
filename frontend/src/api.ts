@@ -53,6 +53,34 @@ export interface Fingerprint {
   opsec_rating: string;
 }
 
+export interface TimelineEvent {
+  event_type: string;
+  timestamp: number;
+  gate_id?: string;
+  gate_name?: string;
+  character_id?: string;
+  solar_system_id?: string;
+  killmail_id?: string;
+  victim_character_id?: string;
+  delta_seconds: number;
+}
+
+export interface CompareResult {
+  entity_1: string;
+  entity_2: string;
+  temporal_similarity: number;
+  route_similarity: number;
+  social_similarity: number;
+  overall_similarity: number;
+  likely_alt: boolean;
+  likely_fleet_mate: boolean;
+}
+
+export interface Narrative {
+  entity_id: string;
+  narrative: string;
+}
+
 export interface FeedItem {
   id: number;
   event_type: string;
@@ -83,4 +111,11 @@ export const api = {
     fetchJson<{ entries: { entity_id: string; display_name: string; score: number }[] }>(
       `/leaderboard/${category}`
     ),
+  timeline: (id: string, start?: number, end?: number) =>
+    fetchJson<{ entity_id: string; events: TimelineEvent[] }>(
+      `/entity/${id}/timeline${start ? `?start=${start}` : ''}${end ? `&end=${end}` : ''}`
+    ),
+  compare: (id1: string, id2: string) =>
+    fetchJson<CompareResult>(`/fingerprint/compare?entity_1=${id1}&entity_2=${id2}`),
+  narrative: (id: string) => fetchJson<Narrative>(`/entity/${id}/narrative`),
 };
