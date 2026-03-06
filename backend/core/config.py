@@ -1,0 +1,32 @@
+"""Witness configuration — all settings from environment or .env file."""
+
+from pydantic_settings import BaseSettings
+
+
+class Settings(BaseSettings):
+    # World API — will change on March 11 (Sui migration)
+    # Confirm actual base URL on hackathon server day 1
+    WORLD_API_BASE: str = "https://world-api.evefrontier.com"
+
+    # Polling
+    POLL_INTERVAL_SECONDS: int = 30
+    POLL_TIMEOUT_SECONDS: float = 10.0
+
+    # Database
+    DB_PATH: str = "data/witness.db"
+
+    # Discord bot
+    DISCORD_TOKEN: str = ""
+    DISCORD_WEBHOOK_URL: str = ""
+
+    # Anthropic (for narrative generation)
+    ANTHROPIC_API_KEY: str = ""
+
+    # Server
+    HOST: str = "0.0.0.0"
+    PORT: int = 8000
+
+    model_config = {"env_file": ".env", "env_prefix": "WITNESS_"}
+
+
+settings = Settings()
