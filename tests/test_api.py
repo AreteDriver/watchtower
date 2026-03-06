@@ -32,6 +32,15 @@ def test_db():
         "INSERT INTO story_feed (event_type, headline, body, entity_ids, severity, timestamp) "
         "VALUES ('engagement', 'Test Battle', 'Details', '[\"gate-001\"]', 'warning', 1000)"
     )
+    # Seed gate events for fingerprint tests
+    for i in range(30):
+        conn.execute(
+            "INSERT INTO gate_events "
+            "(gate_id, character_id, "
+            "solar_system_id, timestamp) "
+            f"VALUES ('gate-{i % 3}', 'char-001', "
+            f"'sys-{i % 2}', {1000 + i * 3600})"
+        )
     conn.commit()
     return conn
 
@@ -112,3 +121,35 @@ def test_titles_empty(client):
     assert r.status_code == 200
     data = r.json()
     assert data["titles"] == []
+
+
+def test_fingerprint(client):
+    r = client.get("/api/entity/char-001/fingerprint")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["entity_id"] == "char-001"
+    assert "temporal" in data
+    assert "route" in data
+    assert "social" in data
+    assert "threat" in data
+    assert "opsec_score" in data
+    assert data["route"]["unique_gates"] == 3
+
+
+def test_fingerprint_not_found(client):
+    r = client.get("/api/entity/nonexistent/fingerprint")
+    assert r.status_code == 404
+
+
+def test_fingerprint_compare(client):
+    r = client.get("/api/fingerprint/compare?entity_1=char-001&entity_2=gate-001")
+    assert r.status_code == 200
+    data = r.json()
+    assert "temporal_similarity" in data
+    assert "route_similarity" in data
+    assert "overall_similarity" in data
+
+
+def test_fingerprint_compare_not_found(client):
+    r = client.get("/api/fingerprint/compare?entity_1=char-001&entity_2=nope")
+    assert r.status_code == 404

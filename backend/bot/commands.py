@@ -8,6 +8,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from backend.analysis.entity_resolver import resolve_entity
+from backend.analysis.fingerprint import build_fingerprint
 from backend.analysis.naming_engine import refresh_all_titles
 from backend.analysis.narrative import generate_dossier_narrative
 from backend.analysis.oracle import check_watches
@@ -31,6 +32,7 @@ class WitnessBot(commands.Bot):
         self.tree.add_command(watch)
         self.tree.add_command(unwatch)
         self.tree.add_command(feed)
+        self.tree.add_command(profile)
         self.tree.add_command(opsec)
         self.tree.add_command(leaderboard)
         await self.tree.sync()
@@ -229,81 +231,114 @@ async def feed(interaction: discord.Interaction, count: int = 5):
     await interaction.response.send_message(embed=embed)
 
 
-@app_commands.command(name="opsec", description="Check your corp's operational security score")
-@app_commands.describe(corp_id="Your corp ID")
-async def opsec(interaction: discord.Interaction, corp_id: str):
+@app_commands.command(
+    name="profile",
+    description="Full behavioral fingerprint for any entity",
+)
+@app_commands.describe(entity_id="Character or gate ID to profile")
+async def profile(interaction: discord.Interaction, entity_id: str):
     await interaction.response.defer()
     db = get_db()
+    fp = build_fingerprint(db, entity_id)
+    if not fp:
+        await interaction.followup.send(f"Entity `{entity_id[:20]}` not found.", ephemeral=True)
+        return
 
-    # Basic OPSEC scoring based on behavioral predictability
-    gate_events = db.execute(
-        """SELECT character_id, gate_id, timestamp FROM gate_events
-           WHERE corp_id = ? ORDER BY timestamp DESC LIMIT 500""",
-        (corp_id,),
-    ).fetchall()
+    color = (
+        0xFF0000
+        if fp.threat.threat_level in ("extreme", "high")
+        else 0xFFCC00
+        if fp.threat.threat_level == "moderate"
+        else 0x00FF88
+    )
+    embed = discord.Embed(
+        title=f"Behavioral Profile: {entity_id[:20]}",
+        description=(
+            f"**OPSEC: {fp.opsec_score}/100** ({fp.opsec_rating})\n"
+            f"**Threat: {fp.threat.threat_level.upper()}** "
+            f"(K/D ratio: {fp.threat.kill_ratio:.2f})"
+        ),
+        color=color,
+    )
+    t = fp.temporal
+    embed.add_field(
+        name="Activity Pattern",
+        value=(
+            f"Peak: **{t.peak_hour:02d}:00 UTC**"
+            f" ({t.peak_hour_pct:.0f}% of activity)\n"
+            f"Active hours: {t.active_hours}/24\n"
+            f"Predictability: {t.to_dict()['predictability']}"
+        ),
+        inline=False,
+    )
+    r = fp.route
+    embed.add_field(
+        name="Movement",
+        value=(
+            f"Unique gates: **{r.unique_gates}** "
+            f"| Systems: **{r.unique_systems}**\n"
+            f"Top gate: {r.top_gate[:16]}"
+            f" ({r.top_gate_pct:.0f}%)\n"
+            f"Route predictability: {r.to_dict()['predictability']}"
+        ),
+        inline=False,
+    )
+    if fp.entity_type == "character" and fp.social.unique_associates > 0:
+        s = fp.social
+        embed.add_field(
+            name="Social",
+            value=(
+                f"Known associates: **{s.unique_associates}**\n"
+                f"Top associate: {s.top_associate[:16]}"
+                f" ({s.top_associate_count} co-transits)\n"
+                f"Solo ratio: {s.solo_ratio:.0f}%"
+            ),
+            inline=False,
+        )
+    embed.set_footer(text="Witness — Behavioral Intelligence")
+    await interaction.followup.send(embed=embed)
 
-    if len(gate_events) < 20:
+
+@app_commands.command(
+    name="opsec",
+    description="Check operational security score for an entity",
+)
+@app_commands.describe(entity_id="Character, corp, or gate ID")
+async def opsec(interaction: discord.Interaction, entity_id: str):
+    await interaction.response.defer()
+    db = get_db()
+    fp = build_fingerprint(db, entity_id)
+    if not fp:
+        await interaction.followup.send(f"Entity `{entity_id[:20]}` not found.", ephemeral=True)
+        return
+
+    if fp.event_count < 20:
         await interaction.followup.send(
-            "Not enough data for OPSEC score. "
-            f"Need at least 20 gate events, have {len(gate_events)}."
+            f"Not enough data for OPSEC score. Need at least 20 events, have {fp.event_count}."
         )
         return
 
-    # Time-of-day concentration (higher = more predictable = worse OPSEC)
-    hour_counts: dict[int, int] = {}
-    for e in gate_events:
-        hour = (e["timestamp"] % 86400) // 3600
-        hour_counts[hour] = hour_counts.get(hour, 0) + 1
-
-    total = sum(hour_counts.values())
-    max_hour_pct = max(hour_counts.values()) / total * 100 if total else 0
-
-    # Route repetition (same gate used repeatedly = predictable)
-    gate_counts: dict[str, int] = {}
-    for e in gate_events:
-        gate_counts[e["gate_id"]] = gate_counts.get(e["gate_id"], 0) + 1
-    max_gate_pct = max(gate_counts.values()) / total * 100 if total else 0
-
-    # Unique gates used (more diversity = better OPSEC)
-    gate_diversity = len(gate_counts)
-
-    # Score: 0-100 where 100 is best OPSEC
-    time_score = max(0, 100 - max_hour_pct * 2)  # Penalize time concentration
-    route_score = max(0, 100 - max_gate_pct * 2)  # Penalize route repetition
-    diversity_score = min(100, gate_diversity * 10)  # Reward gate diversity
-
-    opsec_score = int((time_score + route_score + diversity_score) / 3)
-
-    rating = (
-        "EXCELLENT"
-        if opsec_score >= 80
-        else "GOOD"
-        if opsec_score >= 60
-        else "FAIR"
-        if opsec_score >= 40
-        else "POOR"
-    )
-
-    peak_hour = max(hour_counts, key=hour_counts.get)
-
+    color = 0x00FF88 if fp.opsec_score >= 60 else 0xFFCC00 if fp.opsec_score >= 40 else 0xFF0000
     embed = discord.Embed(
-        title=f"OPSEC Score: {corp_id[:16]}",
-        description=f"**{opsec_score}/100** — {rating}",
-        color=0x00FF88 if opsec_score >= 60 else 0xFFCC00 if opsec_score >= 40 else 0xFF0000,
+        title=f"OPSEC Score: {entity_id[:16]}",
+        description=f"**{fp.opsec_score}/100** — {fp.opsec_rating}",
+        color=color,
     )
+    t = fp.temporal
     embed.add_field(
         name="Time Predictability",
-        value=f"{max_hour_pct:.0f}% in peak hour ({peak_hour}:00 UTC)",
+        value=(f"{t.peak_hour_pct:.0f}% in peak hour ({t.peak_hour:02d}:00 UTC)"),
         inline=False,
     )
+    r = fp.route
     embed.add_field(
         name="Route Predictability",
-        value=f"{max_gate_pct:.0f}% through top gate",
+        value=f"{r.top_gate_pct:.0f}% through top gate",
         inline=False,
     )
     embed.add_field(
         name="Gate Diversity",
-        value=f"{gate_diversity} unique gates used",
+        value=f"{r.unique_gates} unique gates used",
         inline=False,
     )
     embed.set_footer(text="Witness Oracle — Counter-Intelligence Analysis")

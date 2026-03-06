@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from backend.analysis.entity_resolver import resolve_entity
+from backend.analysis.fingerprint import build_fingerprint, compare_fingerprints
 from backend.analysis.narrative import generate_battle_report, generate_dossier_narrative
 from backend.db.database import get_db
 
@@ -212,6 +213,30 @@ async def search_entities(
         (pattern, pattern, pattern, limit),
     ).fetchall()
     return {"query": q, "results": [dict(r) for r in rows]}
+
+
+@router.get("/entity/{entity_id}/fingerprint")
+async def get_entity_fingerprint(entity_id: str):
+    db = get_db()
+    fp = build_fingerprint(db, entity_id)
+    if not fp:
+        raise HTTPException(status_code=404, detail="Entity not found")
+    return fp.to_dict()
+
+
+@router.get("/fingerprint/compare")
+async def compare_entity_fingerprints(
+    entity_1: str = Query(...),
+    entity_2: str = Query(...),
+):
+    db = get_db()
+    fp1 = build_fingerprint(db, entity_1)
+    fp2 = build_fingerprint(db, entity_2)
+    if not fp1:
+        raise HTTPException(404, f"Entity not found: {entity_1}")
+    if not fp2:
+        raise HTTPException(404, f"Entity not found: {entity_2}")
+    return compare_fingerprints(fp1, fp2)
 
 
 @router.get("/entity/{entity_id}/narrative")
