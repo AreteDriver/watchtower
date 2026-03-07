@@ -153,3 +153,129 @@ def test_fingerprint_compare(client):
 def test_fingerprint_compare_not_found(client):
     r = client.get("/api/fingerprint/compare?entity_1=char-001&entity_2=nope")
     assert r.status_code == 404
+
+
+def test_entity_timeline(client):
+    r = client.get("/api/entity/char-001/timeline?start=0&end=999999999")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["entity_id"] == "char-001"
+    assert len(data["events"]) > 0
+
+
+def test_entity_timeline_gate(client):
+    r = client.get("/api/entity/gate-0/timeline?start=0&end=999999999")
+    assert r.status_code == 200
+    data = r.json()
+    assert len(data["events"]) > 0
+
+
+def test_feed_with_before(client):
+    r = client.get("/api/feed?before=9999999")
+    assert r.status_code == 200
+    data = r.json()
+    assert len(data["items"]) >= 1
+
+
+def test_leaderboard_most_active_gates(client):
+    r = client.get("/api/leaderboard/most_active_gates")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["category"] == "most_active_gates"
+
+
+def test_leaderboard_top_killers(client):
+    r = client.get("/api/leaderboard/top_killers")
+    assert r.status_code == 200
+
+
+def test_leaderboard_most_deaths(client):
+    r = client.get("/api/leaderboard/most_deaths")
+    assert r.status_code == 200
+
+
+def test_leaderboard_most_traveled(client):
+    r = client.get("/api/leaderboard/most_traveled")
+    assert r.status_code == 200
+
+
+def test_leaderboard_deadliest_gates(client):
+    r = client.get("/api/leaderboard/deadliest_gates")
+    assert r.status_code == 200
+
+
+def test_leaderboard_invalid_category(client):
+    r = client.get("/api/leaderboard/nonsense")
+    assert r.status_code == 400
+
+
+def test_entity_narrative(client):
+    r = client.get("/api/entity/gate-001/narrative")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["entity_id"] == "gate-001"
+    assert len(data["narrative"]) > 0
+
+
+def test_entity_narrative_not_found(client):
+    r = client.get("/api/entity/nonexistent/narrative")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["narrative"] == "Entity not found."
+
+
+def test_create_watch(client):
+    r = client.post(
+        "/api/watches",
+        json={
+            "user_id": "u1",
+            "watch_type": "entity_movement",
+            "target_id": "char-001",
+        },
+    )
+    assert r.status_code == 200
+    assert r.json()["status"] == "created"
+
+
+def test_create_watch_invalid_type(client):
+    r = client.post(
+        "/api/watches",
+        json={
+            "user_id": "u1",
+            "watch_type": "invalid",
+            "target_id": "char-001",
+        },
+    )
+    assert r.status_code == 400
+
+
+def test_delete_watch(client):
+    # Create then delete
+    client.post(
+        "/api/watches",
+        json={
+            "user_id": "u1",
+            "watch_type": "entity_movement",
+            "target_id": "char-001",
+        },
+    )
+    r = client.delete("/api/watches/char-001?user_id=u1")
+    assert r.status_code == 200
+    assert r.json()["status"] == "removed"
+
+
+def test_list_entities_invalid_sort(client):
+    r = client.get("/api/entities?sort=invalid_column")
+    assert r.status_code == 200
+    # Falls back to event_count sort
+    data = r.json()
+    assert data["total"] == 2
+
+
+def test_battle_report_no_events(client):
+    r = client.post(
+        "/api/battle-report",
+        json={"entity_id": "nonexistent", "start": 0, "end": 1},
+    )
+    assert r.status_code == 200
+    assert "error" in r.json()

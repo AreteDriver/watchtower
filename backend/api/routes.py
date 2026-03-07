@@ -14,12 +14,16 @@ from backend.db.database import get_db
 router = APIRouter()
 
 
+_HEALTH_TABLES = ("killmails", "gate_events", "entities", "story_feed", "watches")
+_HEALTH_QUERIES = {t: f"SELECT COUNT(*) as cnt FROM {t}" for t in _HEALTH_TABLES}
+
+
 @router.get("/health")
 async def health():
     db = get_db()
     counts = {}
-    for table in ("killmails", "gate_events", "entities", "story_feed", "watches"):
-        row = db.execute(f"SELECT COUNT(*) as cnt FROM {table}").fetchone()
+    for table, query in _HEALTH_QUERIES.items():
+        row = db.execute(query).fetchone()
         counts[table] = row["cnt"]
     return {"status": "ok", "tables": counts, "timestamp": int(time.time())}
 
@@ -33,6 +37,21 @@ async def get_entity(entity_id: str):
     return dossier.to_dict()
 
 
+_ALLOWED_SORTS = frozenset({"event_count", "last_seen", "kill_count", "death_count", "gate_count"})
+
+_ENTITY_LIST_SQL = {
+    sort_col: (
+        f"""SELECT entity_id, entity_type, display_name, corp_id,
+                   first_seen, last_seen, event_count, kill_count, death_count, gate_count
+            FROM entities {{where}}
+            ORDER BY {sort_col} DESC
+            LIMIT ? OFFSET ?""",
+        "SELECT COUNT(*) as cnt FROM entities {where}",
+    )
+    for sort_col in _ALLOWED_SORTS
+}
+
+
 @router.get("/entities")
 async def list_entities(
     entity_type: str | None = None,
@@ -41,23 +60,15 @@ async def list_entities(
     offset: int = 0,
 ):
     db = get_db()
-    allowed_sorts = {"event_count", "last_seen", "kill_count", "death_count", "gate_count"}
-    if sort not in allowed_sorts:
+    if sort not in _ALLOWED_SORTS:
         sort = "event_count"
 
     where = "WHERE entity_type = ?" if entity_type else ""
     params = [entity_type] if entity_type else []
 
-    rows = db.execute(
-        f"""SELECT entity_id, entity_type, display_name, corp_id,
-                   first_seen, last_seen, event_count, kill_count, death_count, gate_count
-            FROM entities {where}
-            ORDER BY {sort} DESC
-            LIMIT ? OFFSET ?""",
-        params + [limit, offset],
-    ).fetchall()
-
-    total = db.execute(f"SELECT COUNT(*) as cnt FROM entities {where}", params).fetchone()
+    list_sql, count_sql = _ENTITY_LIST_SQL[sort]
+    rows = db.execute(list_sql.format(where=where), params + [limit, offset]).fetchall()
+    total = db.execute(count_sql.format(where=where), params).fetchone()
 
     return {
         "entities": [dict(r) for r in rows],
@@ -77,8 +88,8 @@ async def get_entity_timeline(
     """Unified timeline of all events for an entity."""
     db = get_db()
     now = int(time.time())
-    start = start or (now - 7 * 86400)
-    end = end or now
+    start = start if start is not None else (now - 7 * 86400)
+    end = end if end is not None else now
 
     events = []
 

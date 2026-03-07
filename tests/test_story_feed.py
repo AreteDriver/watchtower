@@ -7,6 +7,8 @@ from backend.analysis.story_feed import (
     detect_gate_milestones,
     detect_killmail_clusters,
     detect_new_entities,
+    detect_title_changes,
+    generate_feed_items,
 )
 from backend.db.database import SCHEMA
 
@@ -105,3 +107,41 @@ def test_gate_milestone():
 
     stories = db.execute("SELECT * FROM story_feed").fetchall()
     assert "MILESTONE" in stories[0]["headline"]
+
+
+def test_detect_title_changes():
+    db = _get_test_db()
+    now = int(time.time())
+    db.execute(
+        "INSERT INTO entities (entity_id, entity_type, display_name, event_count) "
+        "VALUES ('g1', 'gate', 'War Gate', 100)"
+    )
+    db.execute(
+        "INSERT INTO entity_titles (entity_id, title, title_type, computed_at) "
+        f"VALUES ('g1', 'The Meatgrinder', 'earned', {now - 60})"
+    )
+    db.commit()
+
+    count = detect_title_changes(db)
+    assert count == 1
+    stories = db.execute("SELECT * FROM story_feed").fetchall()
+    assert "TITLE EARNED" in stories[0]["headline"]
+    assert "The Meatgrinder" in stories[0]["headline"]
+
+
+def test_generate_feed_items_aggregates():
+    """generate_feed_items runs all detectors and commits."""
+    db = _get_test_db()
+    # Add data that triggers gate milestone
+    db.execute(
+        "INSERT INTO entities (entity_id, entity_type, display_name, event_count) "
+        "VALUES ('g1', 'gate', 'Highway', 1000)"
+    )
+    db.commit()
+
+    from unittest.mock import patch
+
+    with patch("backend.analysis.story_feed.get_db", return_value=db):
+        total = generate_feed_items()
+
+    assert total >= 1

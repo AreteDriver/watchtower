@@ -80,3 +80,27 @@ def test_indexes_exist():
     assert "idx_killmails_timestamp" in index_names
     assert "idx_gate_events_timestamp" in index_names
     assert "idx_entities_type" in index_names
+
+
+def test_get_db_creates_and_caches(tmp_path):
+    """get_db creates DB file and returns same connection on second call."""
+    from unittest.mock import patch
+
+    db_path = str(tmp_path / "test.db")
+    with patch.object(database, "_connection", None):
+        with patch.object(database.settings, "DB_PATH", db_path):
+            database._connection = None
+            conn = database.get_db()
+            assert conn is not None
+            # Second call returns same connection
+            assert database.get_db() is conn
+            database.close_db()
+            assert database._connection is None
+
+
+def test_close_db_noop_when_not_connected():
+    """close_db does nothing when no connection exists."""
+    from unittest.mock import patch
+
+    with patch.object(database, "_connection", None):
+        database.close_db()  # Should not raise

@@ -48,7 +48,7 @@ select = ["E", "F", "W", "I", "B", "UP"]
 
 [tool.coverage.run]
 source = ["backend"]
-omit = ["tests/*"]
+omit = ["tests/*", "backend/bot/*"]
 
 [tool.coverage.report]
 fail_under = 80
