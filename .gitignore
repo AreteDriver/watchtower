@@ -8,6 +8,13 @@ build/
 
 # Environment
 .env
+*.env
+contracts/.env
+
+# Secrets / Keys
+*.pem
+*.key
+*.p12
 
 # Database
 data/*.db

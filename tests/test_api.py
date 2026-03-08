@@ -66,12 +66,24 @@ def client(test_db):
         patch("backend.db.database.get_db", return_value=test_db),
         patch("backend.api.routes.get_db", return_value=test_db),
         patch("backend.api.app.get_db", return_value=test_db),
+        patch("backend.api.routes.check_tier_access"),
         patch("backend.ingestion.poller.run_poller"),
         patch("backend.bot.discord_bot.run_bot"),
     ):
         from backend.api.app import app
+        from backend.api.rate_limit import limiter
 
+        limiter.enabled = False
         yield TestClient(app, raise_server_exceptions=False)
+        limiter.enabled = True
+
+
+def test_security_headers(client):
+    r = client.get("/api/health")
+    assert r.headers["X-Content-Type-Options"] == "nosniff"
+    assert r.headers["X-Frame-Options"] == "DENY"
+    assert r.headers["X-XSS-Protection"] == "1; mode=block"
+    assert r.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
 
 
 def test_health(client):
@@ -252,6 +264,61 @@ def test_create_watch(client):
     assert r.json()["status"] == "created"
 
 
+def test_create_watch_with_valid_webhook(client):
+    r = client.post(
+        "/api/watches",
+        json={
+            "user_id": "u1",
+            "watch_type": "entity_movement",
+            "target_id": "char-001",
+            "webhook_url": "https://discord.com/api/webhooks/123/abc",
+        },
+    )
+    assert r.status_code == 200
+
+
+def test_create_watch_http_webhook_rejected(client):
+    r = client.post(
+        "/api/watches",
+        json={
+            "user_id": "u1",
+            "watch_type": "entity_movement",
+            "target_id": "char-001",
+            "webhook_url": "http://discord.com/api/webhooks/123/abc",
+        },
+    )
+    assert r.status_code == 400
+    assert "HTTPS" in r.json()["detail"]
+
+
+def test_create_watch_private_ip_rejected(client):
+    r = client.post(
+        "/api/watches",
+        json={
+            "user_id": "u1",
+            "watch_type": "entity_movement",
+            "target_id": "char-001",
+            "webhook_url": "https://127.0.0.1/callback",
+        },
+    )
+    assert r.status_code == 400
+    assert "private" in r.json()["detail"].lower()
+
+
+def test_create_watch_disallowed_domain_rejected(client):
+    r = client.post(
+        "/api/watches",
+        json={
+            "user_id": "u1",
+            "watch_type": "entity_movement",
+            "target_id": "char-001",
+            "webhook_url": "https://evil.com/steal",
+        },
+    )
+    assert r.status_code == 400
+    assert "not allowed" in r.json()["detail"].lower()
+
+
 def test_create_watch_invalid_type(client):
     r = client.post(
         "/api/watches",
@@ -394,7 +461,7 @@ def test_subscription_not_found(client):
 def test_subscribe(client):
     r = client.post(
         "/api/subscribe",
-        json={"wallet_address": "0xTest", "tier": 2},
+        json={"wallet_address": "0x1234567890abcdef1234567890abcdef12345678", "tier": 2},
     )
     assert r.status_code == 200
     data = r.json()
@@ -402,10 +469,18 @@ def test_subscribe(client):
     assert data["active"] is True
 
 
+def test_subscribe_invalid_wallet(client):
+    r = client.post(
+        "/api/subscribe",
+        json={"wallet_address": "not-a-wallet", "tier": 1},
+    )
+    assert r.status_code == 422
+
+
 def test_subscribe_invalid_tier(client):
     r = client.post(
         "/api/subscribe",
-        json={"wallet_address": "0xTest", "tier": 5},
+        json={"wallet_address": "0x1234567890abcdef1234567890abcdef12345678", "tier": 5},
     )
     assert r.status_code == 400
 

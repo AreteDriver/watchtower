@@ -10,6 +10,7 @@ from backend.analysis.story_feed import (
     detect_streak_milestones,
     detect_title_changes,
     generate_feed_items,
+    generate_historical_feed,
 )
 from backend.db.database import SCHEMA
 
@@ -179,3 +180,188 @@ def test_generate_feed_items_aggregates():
         total = generate_feed_items()
 
     assert total >= 1
+
+
+# --- generate_historical_feed tests ---
+
+
+def test_historical_feed_killmail_clusters():
+    """Clusters with 5+ kills in a system generate stories."""
+    db = _get_test_db()
+    now = int(time.time())
+    # 6 kills in same system (threshold is 5)
+    for i in range(6):
+        db.execute(
+            "INSERT INTO killmails (killmail_id,"
+            " solar_system_id, timestamp)"
+            " VALUES (?, 'sys-hist', ?)",
+            (f"hk-{i}", now - 86400 * 10 + i * 86400),
+        )
+    db.commit()
+
+    from unittest.mock import patch
+
+    with patch("backend.analysis.story_feed.get_db", return_value=db):
+        total = generate_historical_feed()
+
+    assert total >= 1
+    stories = db.execute("SELECT * FROM story_feed").fetchall()
+    engagement = [s for s in stories if "ENGAGEMENT" in s["headline"]]
+    assert len(engagement) >= 1
+    assert "6 killmails" in engagement[0]["headline"]
+    assert "days" in engagement[0]["headline"]
+
+
+def test_historical_feed_top_killers():
+    """Entities with kill_count >= 10 generate HUNTER stories."""
+    db = _get_test_db()
+    db.execute(
+        "INSERT INTO entities"
+        " (entity_id, entity_type, display_name, kill_count)"
+        " VALUES ('killer-1', 'character', 'TopKiller', 15)"
+    )
+    db.commit()
+
+    from unittest.mock import patch
+
+    with patch("backend.analysis.story_feed.get_db", return_value=db):
+        total = generate_historical_feed()
+
+    assert total >= 1
+    stories = db.execute("SELECT * FROM story_feed").fetchall()
+    hunter = [s for s in stories if "HUNTER" in s["headline"]]
+    assert len(hunter) == 1
+    assert "TopKiller" in hunter[0]["headline"]
+    assert "15 confirmed kills" in hunter[0]["headline"]
+
+
+def test_historical_feed_top_deaths():
+    """Entities with death_count >= 20 generate MARKED stories."""
+    db = _get_test_db()
+    db.execute(
+        "INSERT INTO entities"
+        " (entity_id, entity_type, display_name, death_count)"
+        " VALUES ('victim-1', 'character', 'DyingPilot', 25)"
+    )
+    db.commit()
+
+    from unittest.mock import patch
+
+    with patch("backend.analysis.story_feed.get_db", return_value=db):
+        total = generate_historical_feed()
+
+    assert total >= 1
+    stories = db.execute("SELECT * FROM story_feed").fetchall()
+    marked = [s for s in stories if "THE MARKED" in s["headline"]]
+    assert len(marked) == 1
+    assert "DyingPilot" in marked[0]["headline"]
+    assert "25 times" in marked[0]["headline"]
+
+
+def test_historical_feed_title_changes():
+    """Title changes are included in historical feed."""
+    db = _get_test_db()
+    now = int(time.time())
+    db.execute(
+        "INSERT INTO entities"
+        " (entity_id, entity_type, display_name, event_count)"
+        " VALUES ('g-hist', 'gate', 'HistGate', 100)"
+    )
+    db.execute(
+        "INSERT INTO entity_titles"
+        " (entity_id, title, title_type, computed_at)"
+        " VALUES ('g-hist', 'The Highway', 'earned', ?)",
+        (now - 60,),
+    )
+    db.commit()
+
+    from unittest.mock import patch
+
+    with patch("backend.analysis.story_feed.get_db", return_value=db):
+        total = generate_historical_feed()
+
+    assert total >= 1
+    stories = db.execute("SELECT * FROM story_feed").fetchall()
+    title_stories = [s for s in stories if "TITLE EARNED" in s["headline"]]
+    assert len(title_stories) >= 1
+
+
+def test_historical_feed_empty_db():
+    """Empty DB returns 0 with no stories generated."""
+    db = _get_test_db()
+
+    from unittest.mock import patch
+
+    with patch("backend.analysis.story_feed.get_db", return_value=db):
+        total = generate_historical_feed()
+
+    assert total == 0
+    stories = db.execute("SELECT COUNT(*) as cnt FROM story_feed").fetchone()
+    assert stories["cnt"] == 0
+
+
+def test_historical_feed_severity_levels():
+    """Clusters with 50+ kills get critical severity."""
+    db = _get_test_db()
+    now = int(time.time())
+    for i in range(55):
+        db.execute(
+            "INSERT INTO killmails (killmail_id,"
+            " solar_system_id, timestamp)"
+            " VALUES (?, 'sys-big', ?)",
+            (f"big-{i}", now - 86400 * 60 + i * 86400),
+        )
+    db.commit()
+
+    from unittest.mock import patch
+
+    with patch("backend.analysis.story_feed.get_db", return_value=db):
+        generate_historical_feed()
+
+    stories = db.execute("SELECT * FROM story_feed WHERE event_type = 'engagement'").fetchall()
+    assert any(s["severity"] == "critical" for s in stories)
+
+
+def test_historical_feed_killer_no_display_name():
+    """Top killer without display_name uses entity_id prefix."""
+    db = _get_test_db()
+    db.execute(
+        "INSERT INTO entities"
+        " (entity_id, entity_type, kill_count)"
+        " VALUES ('0xabcdef1234567890', 'character', 12)"
+    )
+    db.commit()
+
+    from unittest.mock import patch
+
+    with patch("backend.analysis.story_feed.get_db", return_value=db):
+        generate_historical_feed()
+
+    stories = db.execute("SELECT * FROM story_feed").fetchall()
+    hunter = [s for s in stories if "HUNTER" in s["headline"]]
+    assert len(hunter) == 1
+    assert "0xabcdef12345678" in hunter[0]["headline"]
+
+
+def test_detect_streak_milestones_zero_streak():
+    """Entity with current_streak <= 0 is skipped."""
+    from unittest.mock import patch
+
+    from backend.analysis.streaks import StreakInfo
+
+    db = _get_test_db()
+    db.execute(
+        "INSERT INTO entities"
+        " (entity_id, entity_type, display_name, kill_count)"
+        " VALUES ('nostreak', 'character', 'NoStreak', 5)"
+    )
+    db.commit()
+
+    zero_info = StreakInfo(entity_id="nostreak", current_streak=0)
+    with patch(
+        "backend.analysis.streaks.compute_streaks",
+        return_value=zero_info,
+    ):
+        count = detect_streak_milestones(db)
+
+    assert count == 0

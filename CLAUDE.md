@@ -8,8 +8,8 @@ The Living Memory of EVE Frontier — chain archaeology, AI intelligence, locato
 
 - **Version**: 0.1.0
 - **Language**: Python
-- **Files**: 72 across 6 languages
-- **Lines**: 10,992
+- **Files**: 107 across 6 languages
+- **Lines**: 16,276
 
 ## Architecture
 
@@ -24,6 +24,8 @@ witness/
 │   ├── core/
 │   ├── db/
 │   └── ingestion/
+├── contracts/
+│   └── src/
 ├── data/
 ├── docs/
 ├── frontend/
@@ -37,6 +39,7 @@ witness/
 ├── Dockerfile
 ├── README.md
 ├── docker-compose.yml
+├── fly.toml
 ├── pyproject.toml
 ```
 
@@ -58,8 +61,7 @@ witness/
 - **Type Hints**: present
 - **Imports**: absolute
 - **Path Handling**: pathlib
-- **Semicolons**: mixed
-- **Line Length (p95)**: 79 characters
+- **Line Length (p95)**: 75 characters
 
 ## Common Commands
 
@@ -85,6 +87,8 @@ pytest --cov=backend --cov-fail-under=80 tests/
 - Killmails are FIRST-CLASS data — only durable positional signal post-coordinate-privacy
 - Coordinates are hackathon-only — don't build core features on them
 - Cache AI narratives — same entity + same event hash = cached response
+- Attacker data can be strings OR dicts with "address" key — always normalize with _extract_ids()
+- SQLite check_same_thread=False required for FastAPI lifespan threading
 
 ## Data Flow
 
@@ -94,27 +98,22 @@ World API (polling) → Poller → SQLite → Entity Resolver → Naming Engine
                               FastAPI API    AI Narratives   Story Feed
                                    ↓              ↓              ↓
                               Dashboard     Discord Bot     Webhook Alerts
+                                   ↓
+                         Reputation → On-Chain (WatcherSystem.sol)
 ```
-
-## Hackathon Timeline
-
-- Pre-March 11: Scaffold, API explorer, DB schema, poller skeleton
-- Week 1 (Mar 11-17): Live data flowing, entity resolver, basic stats
-- Week 2 (Mar 18-24): AI narratives, naming engine, story feed, Discord bot
-- Week 3 (Mar 25-31): React dashboard, polish, demo video
 
 ## Anti-Patterns (Do NOT Do)
 
 - Do NOT commit secrets, API keys, or credentials
 - Do NOT skip writing tests for new code
+- Do NOT hardcode secrets in Dockerfiles — use environment variables
+- Do NOT use `latest` tag — pin specific versions
 - Do NOT use `os.path` — use `pathlib.Path` everywhere
 - Do NOT use bare `except:` — catch specific exceptions
 - Do NOT use mutable default arguments
 - Do NOT use `print()` for logging — use the `logging` module
 - Do NOT use `any` type — define proper type interfaces
 - Do NOT use `var` — use `const` or `let`
-- Do NOT hardcode secrets in Dockerfiles — use environment variables
-- Do NOT use `latest` tag — pin specific versions
 - Do NOT use synchronous database calls in async endpoints
 - Do NOT return raw dicts — use Pydantic response models
 
@@ -135,45 +134,49 @@ World API (polling) → Poller → SQLite → Entity Resolver → Naming Engine
 
 ### Key Models/Classes
 - `BattleReportRequest`
+- `CorpProfile`
 - `EntityDossier`
 - `Fingerprint`
+- `Hotzone`
+- `KillEdge`
+- `KillGraphNode`
 - `ProfileActions`
+- `ReputationScore`
 - `RouteProfile`
 - `Settings`
 - `SocialProfile`
+- `StreakInfo`
+- `SubscribeRequest`
 - `TemporalProfile`
-- `ThreatProfile`
-- `WatchRequest`
-- `WitnessBot`
 
 ### Domain Terms
 - AI
+- Alt Detection
+- Assembly Guide
+- Behavioral Fingerprints
+- CSS
 - Chain Archaeology
-- DELETE
-- Dashboard Discord Bot Webhook Alerts
-- Discord Commands
-- EVE
-- Earned Titles
-- Entity Dossiers
-- Entity Resolver
-- Free Layer
+- Chain Economy
+- Chain Trust Scoring
+- Character Titles
+- Combat Honor
 
 ### API Endpoints
+- `/assemblies`
+- `/assemblies/list`
 - `/battle-report`
+- `/corp/{corp_id}`
+- `/corps`
+- `/corps/rivalries`
 - `/entities`
 - `/entity/{entity_id}`
 - `/entity/{entity_id}/fingerprint`
 - `/entity/{entity_id}/narrative`
+- `/entity/{entity_id}/reputation`
+- `/entity/{entity_id}/streak`
 - `/entity/{entity_id}/timeline`
 - `/feed`
 - `/fingerprint/compare`
-- `/health`
-- `/leaderboard/{category}`
-- `/search`
-- `/titles`
-- `/watches`
-- `/watches/{target_id}`
-- `/{path:path}`
 
 ### Enums/Constants
 - `ANTHROPIC_API_KEY`
@@ -184,6 +187,19 @@ World API (polling) → Poller → SQLite → Entity Resolver → Naming Engine
 - `DOSSIER_SYSTEM`
 - `DOSSIER_USER`
 - `SCHEMA`
+- `WATCHER_OWNER_ADDRESS`
+
+## AI Skills
+
+**Installed**: 117 skills in `~/.claude/skills/`
+- `a11y`, `accessibility-checker`, `agent-teams-orchestrator`, `align-debug`, `api-client`, `api-docs`, `api-tester`, `apple-dev-best-practices`, `arch`, `backup`, `build`, `changelog`, `ci`, `cicd-pipeline`, `code-builder`
+- ... and 102 more
+
+**Recommended bundles**: `api-integration`, `full-stack-dev`
+
+**Recommended skills** (not yet installed):
+- `api-integration`
+- `full-stack-dev`
 
 ## Git Conventions
 
