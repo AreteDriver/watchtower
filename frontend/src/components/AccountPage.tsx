@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth, TIER_LABELS } from '../contexts/AuthContext';
 import { api } from '../api';
-import type { WatchData } from '../api';
+import type { WatchData, AlertData } from '../api';
 
 const TIER_FEATURES: Record<number, string[]> = {
   0: ['Entity search', 'Story feed', 'Leaderboards', 'Kill streaks'],
@@ -34,16 +34,22 @@ function WatchTypeLabel({ type }: { type: string }) {
 export function AccountPage() {
   const { wallet, subscription, hasProvider, connect, disconnect, refreshSubscription } = useAuth();
   const [watches, setWatches] = useState<WatchData[]>([]);
+  const [alerts, setAlerts] = useState<AlertData[]>([]);
   const [loadingWatches, setLoadingWatches] = useState(false);
 
   useEffect(() => {
     if (!wallet) return;
     setLoadingWatches(true);
-    api.watches(wallet)
-      .then((data) => setWatches(data.watches))
-      .catch(() => setWatches([]))
-      .finally(() => setLoadingWatches(false));
+    Promise.all([
+      api.watches(wallet).then((d) => setWatches(d.watches)).catch(() => setWatches([])),
+      api.alerts(wallet).then((d) => setAlerts(d.alerts)).catch(() => setAlerts([])),
+    ]).finally(() => setLoadingWatches(false));
   }, [wallet]);
+
+  const dismissAlert = async (alertId: number) => {
+    await api.markAlertRead(alertId);
+    setAlerts((prev) => prev.filter((a) => a.id !== alertId));
+  };
 
   const removeWatch = async (targetId: string) => {
     if (!wallet) return;
@@ -207,6 +213,47 @@ export function AccountPage() {
           </button>
         </div>
       </div>
+
+      {/* Alerts */}
+      {alerts.length > 0 && (
+        <div className="bg-[var(--eve-surface)] border border-[var(--eve-border)] rounded-lg p-5 space-y-4">
+          <div className="flex justify-between items-center">
+            <h3 className="text-sm font-bold text-[var(--eve-orange,#FF6600)] uppercase tracking-wider">
+              Alerts
+            </h3>
+            <span className="text-xs text-[var(--eve-dim)]">
+              {alerts.filter((a) => !a.read).length} unread
+            </span>
+          </div>
+          <div className="space-y-2">
+            {alerts.map((alert) => (
+              <div
+                key={alert.id}
+                className={`flex items-start justify-between px-3 py-2 rounded border transition-colors ${
+                  alert.severity === 'critical'
+                    ? 'border-[var(--eve-red)]'
+                    : 'border-[var(--eve-border)]'
+                }`}
+              >
+                <div className="space-y-0.5">
+                  <div className="text-xs font-bold text-[var(--eve-text)]">{alert.title}</div>
+                  <div className="text-[10px] text-[var(--eve-dim)]">{alert.body}</div>
+                  <div className="text-[10px] text-[var(--eve-dim)]">
+                    {new Date(alert.created_at * 1000).toLocaleString()}
+                  </div>
+                </div>
+                <button
+                  onClick={() => dismissAlert(alert.id)}
+                  className="text-[10px] text-[var(--eve-dim)] hover:text-[var(--eve-text)]
+                             transition-colors px-2 py-1 shrink-0"
+                >
+                  Dismiss
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Active Watches */}
       <div className="bg-[var(--eve-surface)] border border-[var(--eve-border)] rounded-lg p-5 space-y-4">

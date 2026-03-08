@@ -4,7 +4,7 @@ import type { StreakData } from '../api';
 
 interface Props {
   entityId?: string;
-  onSelect: (entityId: string) => void;
+  onSelect?: (entityId: string) => void;
 }
 
 function statusStyle(status: string): { color: string; label: string } {
@@ -110,7 +110,7 @@ export function StreakTracker({ entityId, onSelect }: Props) {
                 >
                   <div className="flex justify-between items-center mb-1">
                     <button
-                      onClick={() => onSelect(s.entity_id)}
+                      onClick={() => onSelect?.(s.entity_id)}
                       className="text-sm text-[var(--eve-green)] hover:underline"
                     >
                       {s.display_name || s.entity_id.slice(0, 12)}

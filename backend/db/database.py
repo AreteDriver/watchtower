@@ -129,6 +129,19 @@ CREATE TABLE IF NOT EXISTS watcher_subscriptions (
     created_at INTEGER DEFAULT (unixepoch())
 );
 
+CREATE TABLE IF NOT EXISTS watch_alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    watch_id INTEGER NOT NULL,
+    user_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT,
+    severity TEXT DEFAULT 'info',
+    read INTEGER DEFAULT 0,
+    created_at INTEGER DEFAULT (unixepoch())
+);
+
+CREATE INDEX IF NOT EXISTS idx_watch_alerts_user ON watch_alerts(user_id, read, created_at DESC);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_killmails_timestamp ON killmails(timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_killmails_system ON killmails(solar_system_id, timestamp DESC);

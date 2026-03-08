@@ -224,6 +224,16 @@ export interface WatchData {
   created_at: number;
 }
 
+export interface AlertData {
+  id: number;
+  watch_id: number;
+  title: string;
+  body: string;
+  severity: string;
+  read: number;
+  created_at: number;
+}
+
 export const api = {
   health: () => fetchJson<{ status: string; tables: Record<string, number> }>('/health'),
   search: (q: string) => fetchJson<{ results: SearchResult[] }>(`/search?q=${encodeURIComponent(q)}`),
@@ -266,4 +276,8 @@ export const api = {
     }),
   deleteWatch: (targetId: string, userId: string) =>
     deleteJson<{ status: string }>(`/watches/${targetId}?user_id=${encodeURIComponent(userId)}`),
+  alerts: (userId: string) =>
+    fetchJson<{ alerts: AlertData[] }>(`/alerts?user_id=${encodeURIComponent(userId)}`),
+  markAlertRead: (alertId: number) =>
+    postJson<{ status: string }>(`/alerts/${alertId}/read`, {}),
 };

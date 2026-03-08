@@ -160,6 +160,14 @@ async def check_watches() -> int:
                     alert_color = EVE_RED
 
         if triggered:
+            # Store alert in DB for frontend
+            severity = "critical" if alert_color == EVE_RED else "warning"
+            db.execute(
+                """INSERT INTO watch_alerts (watch_id, user_id, title, body, severity)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (watch["id"], watch["user_id"], alert_title, alert_body, severity),
+            )
+
             webhook_url = watch["webhook_url"] or settings.DISCORD_WEBHOOK_URL
             if webhook_url:
                 await fire_webhook(webhook_url, alert_title, alert_body, alert_color)

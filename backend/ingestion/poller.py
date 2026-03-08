@@ -213,6 +213,44 @@ def _ingest_gate_events(db, events: list[dict]) -> int:
     return count
 
 
+def _ingest_subscriptions(db, assemblies: list[dict]) -> int:
+    """Extract subscription events from assembly interactions.
+
+    The World API exposes inventory transfers to Watcher assemblies.
+    When a player transfers items to a Watcher assembly, the WatcherSystem
+    contract records a subscription on-chain. We mirror that to local DB.
+    """
+    count = 0
+    for raw in assemblies:
+        # Look for subscription data embedded in assembly state
+        subs = raw.get("subscriptions", [])
+        if not subs and raw.get("type") != "SmartStorageUnit":
+            continue
+        for sub in subs:
+            wallet = sub.get("subscriber") or sub.get("address", "")
+            tier = sub.get("tier", 0)
+            expires_at = sub.get("expiresAt") or sub.get("expires_at", 0)
+            if isinstance(expires_at, str):
+                expires_at = _parse_iso_time(expires_at)
+            if not wallet or not tier:
+                continue
+            try:
+                db.execute(
+                    """INSERT INTO watcher_subscriptions
+                       (wallet_address, tier, expires_at, created_at)
+                       VALUES (?, ?, ?, unixepoch())
+                       ON CONFLICT(wallet_address) DO UPDATE SET
+                           tier = MAX(watcher_subscriptions.tier, excluded.tier),
+                           expires_at = MAX(watcher_subscriptions.expires_at, excluded.expires_at)
+                    """,
+                    (wallet.lower(), tier, expires_at),
+                )
+                count += 1
+            except Exception as e:
+                logger.error("Subscription ingest error: %s", e)
+    return count
+
+
 def _update_entities(db) -> None:
     """Rebuild entity stats from event tables. Lightweight — runs each cycle."""
     try:
@@ -309,14 +347,16 @@ async def run_poller() -> None:
                 db = get_db()
                 new_kills = _ingest_killmails(db, raw_kills)
                 new_assemblies = _ingest_smart_assemblies(db, raw_assemblies)
+                new_subs = _ingest_subscriptions(db, raw_assemblies)
 
                 if new_kills or new_assemblies:
                     _update_entities(db)
                     db.commit()
                     logger.info(
-                        "Ingested: %d killmails, %d assemblies",
+                        "Ingested: %d killmails, %d assemblies, %d subs",
                         new_kills,
                         new_assemblies,
+                        new_subs,
                     )
                 else:
                     db.commit()

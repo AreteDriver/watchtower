@@ -16,6 +16,7 @@ from backend.ingestion.poller import (
     _ingest_gate_events,
     _ingest_killmails,
     _ingest_smart_assemblies,
+    _ingest_subscriptions,
     _parse_iso_time,
     _update_entities,
     poll_endpoint,
@@ -748,3 +749,74 @@ async def test_run_poller_no_new_data():
     # No data ingested
     km = test_db.execute("SELECT COUNT(*) as c FROM killmails").fetchone()
     assert km["c"] == 0
+
+
+# --- Subscription ingest tests ---
+
+
+def test_ingest_subscriptions_basic():
+    db = _get_test_db()
+    assemblies = [
+        {
+            "id": "asm-1",
+            "type": "SmartStorageUnit",
+            "subscriptions": [
+                {"subscriber": "0xABCD", "tier": 2, "expiresAt": 9999999999},
+            ],
+        }
+    ]
+    count = _ingest_subscriptions(db, assemblies)
+    db.commit()
+    assert count == 1
+    row = db.execute(
+        "SELECT tier, expires_at FROM watcher_subscriptions WHERE wallet_address = ?",
+        ("0xabcd",),
+    ).fetchone()
+    assert row["tier"] == 2
+    assert row["expires_at"] == 9999999999
+
+
+def test_ingest_subscriptions_upgrade():
+    db = _get_test_db()
+    # Insert initial sub
+    db.execute(
+        "INSERT INTO watcher_subscriptions (wallet_address, tier, expires_at) VALUES (?, ?, ?)",
+        ("0xabcd", 1, 1000),
+    )
+    db.commit()
+    assemblies = [
+        {
+            "id": "asm-1",
+            "type": "SmartStorageUnit",
+            "subscriptions": [
+                {"subscriber": "0xABCD", "tier": 3, "expiresAt": 2000},
+            ],
+        }
+    ]
+    _ingest_subscriptions(db, assemblies)
+    db.commit()
+    row = db.execute(
+        "SELECT tier, expires_at FROM watcher_subscriptions WHERE wallet_address = ?",
+        ("0xabcd",),
+    ).fetchone()
+    assert row["tier"] == 3  # Upgraded
+    assert row["expires_at"] == 2000
+
+
+def test_ingest_subscriptions_empty():
+    db = _get_test_db()
+    count = _ingest_subscriptions(db, [{"id": "asm-1", "type": "gate"}])
+    assert count == 0
+
+
+def test_ingest_subscriptions_no_wallet():
+    db = _get_test_db()
+    assemblies = [
+        {
+            "id": "asm-1",
+            "type": "SmartStorageUnit",
+            "subscriptions": [{"tier": 1, "expiresAt": 9999}],
+        }
+    ]
+    count = _ingest_subscriptions(db, assemblies)
+    assert count == 0

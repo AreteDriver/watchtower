@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router";
 import App from "../App";
 import { AuthProvider } from "../contexts/AuthContext";
 
@@ -64,15 +65,23 @@ vi.mock("../components/AssemblyMap", () => ({
 vi.mock("../components/AccountPage", () => ({
   AccountPage: () => <div data-testid="account-page">AccountPage</div>,
 }));
+vi.mock("../components/EntityPage", () => ({
+  EntityPage: () => <div data-testid="entity-page">EntityPage</div>,
+}));
 vi.mock("../components/TierGate", () => ({
   TierGate: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
+vi.mock("../components/ErrorBoundary", () => ({
+  ErrorBoundary: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
 
-function renderApp() {
+function renderApp(initialRoute = "/") {
   return render(
-    <AuthProvider>
-      <App />
-    </AuthProvider>
+    <MemoryRouter initialEntries={[initialRoute]}>
+      <AuthProvider>
+        <App />
+      </AuthProvider>
+    </MemoryRouter>
   );
 }
 
@@ -137,5 +146,10 @@ describe("App", () => {
     renderApp();
     await user.click(screen.getByText("Connect"));
     expect(screen.getByTestId("account-page")).toBeInTheDocument();
+  });
+
+  it("renders entity page at /entity/:id route", () => {
+    renderApp("/entity/char-001");
+    expect(screen.getByTestId("entity-page")).toBeInTheDocument();
   });
 });

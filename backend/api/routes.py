@@ -534,3 +534,25 @@ async def delete_watch(target_id: str, user_id: str):
     )
     db.commit()
     return {"status": "removed"}
+
+
+@router.get("/alerts")
+async def list_alerts(user_id: str = Query(..., min_length=1), limit: int = 50):
+    """List recent watch alerts for a user."""
+    db = get_db()
+    rows = db.execute(
+        """SELECT id, watch_id, title, body, severity, read, created_at
+           FROM watch_alerts WHERE user_id = ?
+           ORDER BY created_at DESC LIMIT ?""",
+        (user_id, limit),
+    ).fetchall()
+    return {"alerts": [dict(r) for r in rows]}
+
+
+@router.post("/alerts/{alert_id}/read")
+async def mark_alert_read(alert_id: int):
+    """Mark an alert as read."""
+    db = get_db()
+    db.execute("UPDATE watch_alerts SET read = 1 WHERE id = ?", (alert_id,))
+    db.commit()
+    return {"status": "ok"}

@@ -530,3 +530,15 @@ def test_list_watches_after_create(client):
 def test_list_watches_missing_user_id(client):
     r = client.get("/api/watches")
     assert r.status_code == 422
+
+
+def test_list_alerts_empty(client):
+    r = client.get("/api/alerts?user_id=nobody")
+    assert r.status_code == 200
+    assert r.json()["alerts"] == []
+
+
+def test_mark_alert_read(client):
+    r = client.post("/api/alerts/999/read")
+    assert r.status_code == 200
+    assert r.json()["status"] == "ok"

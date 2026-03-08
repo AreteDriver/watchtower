@@ -8,8 +8,19 @@ interface TierGateProps {
 }
 
 export function TierGate({ requiredTier, children, featureName }: TierGateProps) {
-  const { wallet, subscription } = useAuth();
+  const { wallet, subscription, connecting } = useAuth();
   const currentTier = subscription?.tier ?? 0;
+
+  // Show skeleton while wallet is connecting or subscription is loading
+  if (connecting || (wallet && subscription === null)) {
+    return (
+      <div className="animate-pulse space-y-3 p-4">
+        <div className="h-4 bg-[var(--eve-border)] rounded w-1/3" />
+        <div className="h-3 bg-[var(--eve-border)] rounded w-2/3" />
+        <div className="h-3 bg-[var(--eve-border)] rounded w-1/2" />
+      </div>
+    );
+  }
 
   if (wallet && subscription?.active && currentTier >= requiredTier) {
     return <>{children}</>;
