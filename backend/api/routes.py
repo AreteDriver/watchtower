@@ -8,7 +8,10 @@ from pydantic import BaseModel
 
 from backend.analysis.entity_resolver import resolve_entity
 from backend.analysis.fingerprint import build_fingerprint, compare_fingerprints
+from backend.analysis.hotzones import get_hotzones, get_system_activity
+from backend.analysis.kill_graph import build_kill_graph
 from backend.analysis.narrative import generate_battle_report, generate_dossier_narrative
+from backend.analysis.streaks import compute_streaks, get_hot_streaks
 from backend.db.database import get_db
 
 router = APIRouter()
@@ -254,6 +257,49 @@ async def compare_entity_fingerprints(
 async def get_entity_narrative(entity_id: str):
     narrative = generate_dossier_narrative(entity_id)
     return {"entity_id": entity_id, "narrative": narrative}
+
+
+@router.get("/kill-graph")
+async def get_kill_graph(
+    entity_id: str | None = None,
+    min_kills: int = Query(default=1, ge=1),
+    limit: int = Query(default=50, le=200),
+):
+    """Kill graph: who kills whom, vendetta detection."""
+    db = get_db()
+    return build_kill_graph(db, entity_id=entity_id, min_kills=min_kills, limit=limit)
+
+
+@router.get("/hotzones")
+async def get_hotzones_endpoint(
+    window: str = Query(default="all", pattern="^(24h|7d|30d|all)$"),
+    limit: int = Query(default=20, le=50),
+):
+    """Dangerous systems ranked by kill density."""
+    db = get_db()
+    return {"window": window, "hotzones": get_hotzones(db, window=window, limit=limit)}
+
+
+@router.get("/hotzones/{solar_system_id}")
+async def get_system_detail(solar_system_id: str):
+    """Detailed kill activity for a specific system."""
+    db = get_db()
+    return get_system_activity(db, solar_system_id)
+
+
+@router.get("/entity/{entity_id}/streak")
+async def get_entity_streak(entity_id: str):
+    """Kill streak and momentum data for an entity."""
+    db = get_db()
+    info = compute_streaks(db, entity_id)
+    return info.to_dict()
+
+
+@router.get("/streaks")
+async def get_streaks(limit: int = Query(default=10, le=50)):
+    """Entities currently on kill streaks."""
+    db = get_db()
+    return {"streaks": get_hot_streaks(db, limit=limit)}
 
 
 class BattleReportRequest(BaseModel):

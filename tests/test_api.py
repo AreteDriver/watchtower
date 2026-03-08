@@ -1,5 +1,6 @@
 """Tests for FastAPI routes."""
 
+import json
 import sqlite3
 from unittest.mock import patch
 
@@ -32,6 +33,19 @@ def test_db():
         "INSERT INTO story_feed (event_type, headline, body, entity_ids, severity, timestamp) "
         "VALUES ('engagement', 'Test Battle', 'Details', '[\"gate-001\"]', 'warning', 1000)"
     )
+    # Seed killmails for kill graph / hotzone / streak tests
+    for i in range(5):
+        conn.execute(
+            "INSERT INTO killmails (killmail_id, victim_character_id, attacker_character_ids,"
+            " solar_system_id, timestamp) VALUES (?, ?, ?, ?, ?)",
+            (
+                f"km-{i}",
+                "char-001",
+                json.dumps([{"address": f"attacker-{i}"}]),
+                f"sys-{i % 2}",
+                1000 + i * 3600,
+            ),
+        )
     # Seed gate events for fingerprint tests
     for i in range(30):
         conn.execute(
@@ -271,6 +285,58 @@ def test_list_entities_invalid_sort(client):
     # Falls back to event_count sort
     data = r.json()
     assert data["total"] == 2
+
+
+def test_kill_graph_global(client):
+    r = client.get("/api/kill-graph")
+    assert r.status_code == 200
+    data = r.json()
+    assert "nodes" in data
+    assert "edges" in data
+    assert "vendettas" in data
+
+
+def test_kill_graph_entity(client):
+    r = client.get("/api/kill-graph?entity_id=char-001")
+    assert r.status_code == 200
+
+
+def test_hotzones(client):
+    r = client.get("/api/hotzones")
+    assert r.status_code == 200
+    data = r.json()
+    assert "hotzones" in data
+    assert data["window"] == "all"
+
+
+def test_hotzones_window(client):
+    r = client.get("/api/hotzones?window=7d")
+    assert r.status_code == 200
+    assert r.json()["window"] == "7d"
+
+
+def test_hotzones_invalid_window(client):
+    r = client.get("/api/hotzones?window=invalid")
+    assert r.status_code == 422
+
+
+def test_system_detail(client):
+    r = client.get("/api/hotzones/sys-0")
+    assert r.status_code == 200
+
+
+def test_entity_streak(client):
+    r = client.get("/api/entity/char-001/streak")
+    assert r.status_code == 200
+    data = r.json()
+    assert "current_streak" in data
+    assert "status" in data
+
+
+def test_hot_streaks(client):
+    r = client.get("/api/streaks")
+    assert r.status_code == 200
+    assert "streaks" in r.json()
 
 
 def test_battle_report_no_events(client):

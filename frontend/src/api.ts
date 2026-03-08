@@ -97,6 +97,35 @@ export interface SearchResult {
   event_count: number;
 }
 
+export interface KillGraphData {
+  nodes: { id: string; name: string; kills: number; deaths: number }[];
+  edges: { attacker: string; victim: string; count: number; systems: string[] }[];
+  vendettas: { entity_1: string; entity_2: string; kills_1_to_2: number; kills_2_to_1: number; total: number }[];
+  total_edges: number;
+  total_nodes: number;
+}
+
+export interface HotzoneData {
+  solar_system_id: string;
+  solar_system_name: string;
+  kills: number;
+  unique_attackers: number;
+  unique_victims: number;
+  latest_kill: number;
+  danger_level: string;
+}
+
+export interface StreakData {
+  entity_id: string;
+  current_streak: number;
+  longest_streak: number;
+  last_kill_time: number;
+  status: string;
+  kills_7d: number;
+  kills_30d: number;
+  avg_kills_per_week: number;
+}
+
 export const api = {
   health: () => fetchJson<{ status: string; tables: Record<string, number> }>('/health'),
   search: (q: string) => fetchJson<{ results: SearchResult[] }>(`/search?q=${encodeURIComponent(q)}`),
@@ -118,4 +147,10 @@ export const api = {
   compare: (id1: string, id2: string) =>
     fetchJson<CompareResult>(`/fingerprint/compare?entity_1=${id1}&entity_2=${id2}`),
   narrative: (id: string) => fetchJson<Narrative>(`/entity/${id}/narrative`),
+  killGraph: (entityId?: string) =>
+    fetchJson<KillGraphData>(`/kill-graph${entityId ? `?entity_id=${entityId}` : ''}`),
+  hotzones: (window = 'all') =>
+    fetchJson<{ window: string; hotzones: HotzoneData[] }>(`/hotzones?window=${window}`),
+  streak: (id: string) => fetchJson<StreakData>(`/entity/${id}/streak`),
+  hotStreaks: () => fetchJson<{ streaks: StreakData[] }>('/streaks'),
 };

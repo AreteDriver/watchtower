@@ -10,8 +10,11 @@ import { CompareView } from './components/CompareView';
 import { StoryFeed } from './components/StoryFeed';
 import { Leaderboard } from './components/Leaderboard';
 import { HealthBanner } from './components/HealthBanner';
+import { KillGraph } from './components/KillGraph';
+import { HotzoneMap } from './components/HotzoneMap';
+import { StreakTracker } from './components/StreakTracker';
 
-type Tab = 'intel' | 'compare' | 'feed';
+type Tab = 'intel' | 'tactical' | 'compare' | 'feed';
 
 function App() {
   const [fingerprint, setFingerprint] = useState<Fingerprint | null>(null);
@@ -37,6 +40,7 @@ function App() {
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'intel', label: 'Intelligence' },
+    { key: 'tactical', label: 'Tactical' },
     { key: 'compare', label: 'Compare' },
     { key: 'feed', label: 'Feed & Rankings' },
   ];
@@ -110,6 +114,18 @@ function App() {
                 Search for an entity above to view their behavioral profile.
               </div>
             )}
+          </div>
+        )}
+
+        {activeTab === 'tactical' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-6">
+              <KillGraph entityId={selectedEntity || undefined} onSelect={loadEntity} />
+            </div>
+            <div className="space-y-6">
+              <HotzoneMap />
+              <StreakTracker entityId={selectedEntity || undefined} onSelect={loadEntity} />
+            </div>
           </div>
         )}
 
