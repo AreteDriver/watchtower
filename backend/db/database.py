@@ -1,7 +1,9 @@
 """SQLite database with WAL mode and FTS5.
 
 Schema confirmed against blockchain-gateway-stillness.live.tech.evefrontier.com
-v2 API on 2026-03-07. Cycle 5 tables added 2026-03-10.
+v2 API on 2026-03-10. Live endpoints: killmails, smartassemblies,
+smartcharacters, tribes, fuels, solarsystems, types.
+C5 endpoints (orbitalzones, scans, clones, crowns) not yet live pre-reset.
 """
 
 import sqlite3
@@ -156,6 +158,36 @@ CREATE TABLE IF NOT EXISTS watch_alerts (
 );
 
 CREATE INDEX IF NOT EXISTS idx_watch_alerts_user ON watch_alerts(user_id, read, created_at DESC);
+
+-- Reference data from live API
+
+CREATE TABLE IF NOT EXISTS smart_characters (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    address TEXT UNIQUE NOT NULL,
+    name TEXT,
+    character_id TEXT,
+    tribe_id TEXT,
+    raw_json TEXT,
+    ingested_at INTEGER DEFAULT (unixepoch())
+);
+
+CREATE TABLE IF NOT EXISTS tribes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tribe_id INTEGER UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    name_short TEXT,
+    description TEXT,
+    member_count INTEGER DEFAULT 0,
+    tax_rate REAL DEFAULT 0,
+    tribe_url TEXT,
+    founded_at TEXT,
+    raw_json TEXT,
+    ingested_at INTEGER DEFAULT (unixepoch())
+);
+
+CREATE INDEX IF NOT EXISTS idx_smart_characters_name ON smart_characters(name);
+CREATE INDEX IF NOT EXISTS idx_smart_characters_tribe ON smart_characters(tribe_id);
+CREATE INDEX IF NOT EXISTS idx_tribes_name ON tribes(name);
 
 -- Cycle 5: Shroud of Fear — new tables
 

@@ -527,6 +527,103 @@ def _ingest_crowns(db, crowns: list[dict]) -> int:
     return count
 
 
+def _ingest_smart_characters(db, characters: list[dict]) -> int:
+    """Ingest smart character data for entity resolution."""
+    count = 0
+    for raw in characters:
+        address = raw.get("address")
+        if not address:
+            continue
+        try:
+            cursor = db.execute(
+                """INSERT INTO smart_characters
+                   (address, name, character_id, raw_json)
+                   VALUES (?, ?, ?, ?)
+                   ON CONFLICT(address) DO UPDATE SET
+                       name = COALESCE(NULLIF(excluded.name, ''), smart_characters.name),
+                       character_id = COALESCE(
+                           excluded.character_id,
+                           smart_characters.character_id
+                       ),
+                       raw_json = excluded.raw_json,
+                       ingested_at = unixepoch()""",
+                (
+                    str(address),
+                    raw.get("name", ""),
+                    str(raw.get("id", "")),
+                    json.dumps(raw),
+                ),
+            )
+            if cursor.rowcount > 0:
+                count += 1
+        except Exception as e:
+            logger.error("Character ingest error: %s", e)
+    return count
+
+
+def _ingest_tribes(db, tribes: list[dict]) -> int:
+    """Ingest tribe (corp) data."""
+    count = 0
+    for raw in tribes:
+        tribe_id = raw.get("id")
+        if not tribe_id:
+            continue
+        try:
+            cursor = db.execute(
+                """INSERT INTO tribes
+                   (tribe_id, name, name_short, description,
+                    member_count, tax_rate, tribe_url, founded_at, raw_json)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(tribe_id) DO UPDATE SET
+                       name = excluded.name,
+                       name_short = excluded.name_short,
+                       member_count = excluded.member_count,
+                       tax_rate = excluded.tax_rate,
+                       tribe_url = excluded.tribe_url,
+                       raw_json = excluded.raw_json,
+                       ingested_at = unixepoch()""",
+                (
+                    int(tribe_id),
+                    raw.get("name", ""),
+                    raw.get("nameShort", ""),
+                    raw.get("description", ""),
+                    raw.get("memberCount", 0),
+                    raw.get("taxRate", 0),
+                    raw.get("tribeUrl", ""),
+                    raw.get("foundedAt", ""),
+                    json.dumps(raw),
+                ),
+            )
+            if cursor.rowcount > 0:
+                count += 1
+        except Exception as e:
+            logger.error("Tribe ingest error: %s", e)
+    return count
+
+
+def _enrich_entities_from_characters(db) -> None:
+    """Update entity display names from smart_characters table."""
+    try:
+        db.execute("""
+            UPDATE entities SET
+                display_name = (
+                    SELECT sc.name FROM smart_characters sc
+                    WHERE sc.address = entities.entity_id
+                    AND sc.name != ''
+                ),
+                updated_at = unixepoch()
+            WHERE entity_type = 'character'
+            AND EXISTS (
+                SELECT 1 FROM smart_characters sc
+                WHERE sc.address = entities.entity_id
+                AND sc.name != ''
+                AND sc.name != entities.display_name
+            )
+        """)
+    except Exception as e:
+        logger.error("Entity enrichment error: %s", e)
+
+
 async def _poll_c5_endpoints(client: httpx.AsyncClient) -> None:
     """Poll Cycle 5 endpoints. Gracefully handles 404 (API not yet live)."""
     # Endpoint names are guesses — will confirm from sandbox after March 11
@@ -723,6 +820,27 @@ async def run_poller() -> None:
 
             except Exception as e:
                 logger.critical("Poller loop error (continuing): %s", e)
+
+            # Reference data — poll infrequently (every 10th cycle)
+            try:
+                if cycle_counter % 10 == 0:
+                    char_task = poll_endpoint(client, "v2/smartcharacters")
+                    tribe_task = poll_endpoint(client, "v2/tribes")
+                    raw_chars, raw_tribes = await asyncio.gather(char_task, tribe_task)
+                    if raw_chars or raw_tribes:
+                        ref_db = get_db()
+                        new_chars = _ingest_smart_characters(ref_db, raw_chars)
+                        new_tribes = _ingest_tribes(ref_db, raw_tribes)
+                        if new_chars or new_tribes:
+                            _enrich_entities_from_characters(ref_db)
+                            ref_db.commit()
+                            logger.info(
+                                "Reference data: %d characters, %d tribes",
+                                new_chars,
+                                new_tribes,
+                            )
+            except Exception as e:
+                logger.error("Reference data poll error (continuing): %s", e)
 
             # Cycle 5 endpoints — poll at reduced frequency (every 3rd cycle)
             try:

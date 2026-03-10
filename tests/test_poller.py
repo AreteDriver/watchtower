@@ -15,10 +15,13 @@ from backend.db.database import SCHEMA
 from backend.ingestion.poller import (
     _archive_pre_cycle_data,
     _detect_universe_reset,
+    _enrich_entities_from_characters,
     _ingest_gate_events,
     _ingest_killmails,
     _ingest_smart_assemblies,
+    _ingest_smart_characters,
     _ingest_subscriptions,
+    _ingest_tribes,
     _parse_iso_time,
     _update_entities,
     poll_endpoint,
@@ -912,3 +915,126 @@ def test_archive_preserves_c5_data():
 
     row = db.execute("SELECT COUNT(*) as cnt FROM orbital_zones").fetchone()
     assert row["cnt"] == 1
+
+
+# =========================================================================
+# Smart Characters & Tribes
+# =========================================================================
+
+
+def test_ingest_smart_characters():
+    db = _get_test_db()
+    raw = [
+        {"address": "0x2c91aabe", "name": "HoHoHo Dolo", "id": "12345"},
+        {"address": "0xb4b9ebca", "name": "Konradt Curze", "id": "67890"},
+    ]
+    count = _ingest_smart_characters(db, raw)
+    db.commit()
+    assert count == 2
+    row = db.execute("SELECT * FROM smart_characters WHERE address = '0x2c91aabe'").fetchone()
+    assert row["name"] == "HoHoHo Dolo"
+    assert row["character_id"] == "12345"
+
+
+def test_ingest_smart_characters_upsert():
+    """Name updates on re-ingest."""
+    db = _get_test_db()
+    _ingest_smart_characters(db, [{"address": "0xabc", "name": "OldName", "id": "1"}])
+    db.commit()
+    _ingest_smart_characters(db, [{"address": "0xabc", "name": "NewName", "id": "1"}])
+    db.commit()
+    row = db.execute("SELECT name FROM smart_characters WHERE address = '0xabc'").fetchone()
+    assert row["name"] == "NewName"
+
+
+def test_ingest_smart_characters_skips_no_address():
+    db = _get_test_db()
+    count = _ingest_smart_characters(db, [{"name": "NoAddr"}])
+    assert count == 0
+
+
+def test_ingest_smart_characters_empty_name_preserved():
+    """Empty name doesn't overwrite existing name."""
+    db = _get_test_db()
+    _ingest_smart_characters(db, [{"address": "0xabc", "name": "RealName", "id": "1"}])
+    db.commit()
+    _ingest_smart_characters(db, [{"address": "0xabc", "name": "", "id": "1"}])
+    db.commit()
+    row = db.execute("SELECT name FROM smart_characters WHERE address = '0xabc'").fetchone()
+    assert row["name"] == "RealName"
+
+
+def test_ingest_tribes():
+    db = _get_test_db()
+    raw = [
+        {
+            "id": 98000361,
+            "name": "The Saints",
+            "nameShort": "SAINT",
+            "description": "A tribe",
+            "memberCount": 12,
+            "taxRate": 0,
+            "tribeUrl": "https://discord.gg/saints",
+            "foundedAt": "2025-12-11T03:54:36Z",
+        }
+    ]
+    count = _ingest_tribes(db, raw)
+    db.commit()
+    assert count == 1
+    row = db.execute("SELECT * FROM tribes WHERE tribe_id = 98000361").fetchone()
+    assert row["name"] == "The Saints"
+    assert row["name_short"] == "SAINT"
+    assert row["member_count"] == 12
+
+
+def test_ingest_tribes_upsert():
+    db = _get_test_db()
+    _ingest_tribes(db, [{"id": 1, "name": "Old", "memberCount": 5}])
+    db.commit()
+    _ingest_tribes(db, [{"id": 1, "name": "New", "memberCount": 10}])
+    db.commit()
+    row = db.execute("SELECT * FROM tribes WHERE tribe_id = 1").fetchone()
+    assert row["name"] == "New"
+    assert row["member_count"] == 10
+
+
+def test_ingest_tribes_skips_no_id():
+    db = _get_test_db()
+    count = _ingest_tribes(db, [{"name": "NoId"}])
+    assert count == 0
+
+
+def test_enrich_entities_from_characters():
+    """Entity display names updated from smart_characters."""
+    db = _get_test_db()
+    # Create an entity with no display name
+    db.execute(
+        """INSERT INTO entities (entity_id, entity_type, display_name)
+           VALUES ('0xabc', 'character', '')"""
+    )
+    # Add character data with name
+    db.execute(
+        """INSERT INTO smart_characters (address, name, character_id)
+           VALUES ('0xabc', 'Captain Awesome', '123')"""
+    )
+    db.commit()
+
+    _enrich_entities_from_characters(db)
+    db.commit()
+
+    entity = db.execute("SELECT display_name FROM entities WHERE entity_id = '0xabc'").fetchone()
+    assert entity["display_name"] == "Captain Awesome"
+
+
+def test_enrich_entities_no_match():
+    """No crash when no matching characters exist."""
+    db = _get_test_db()
+    db.execute(
+        """INSERT INTO entities (entity_id, entity_type, display_name)
+           VALUES ('0xabc', 'character', 'Already Named')"""
+    )
+    db.commit()
+    _enrich_entities_from_characters(db)
+    db.commit()
+    entity = db.execute("SELECT display_name FROM entities WHERE entity_id = '0xabc'").fetchone()
+    assert entity["display_name"] == "Already Named"
