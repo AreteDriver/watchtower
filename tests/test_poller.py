@@ -267,7 +267,7 @@ def test_ingest_killmails_dedup():
     raw = [{"id": "km-dup", "timestamp": 1000}]
     _ingest_killmails(db, raw)
     count = _ingest_killmails(db, raw)
-    assert count == 1
+    assert count == 0  # duplicate correctly rejected
 
     total = db.execute("SELECT COUNT(*) as cnt FROM killmails").fetchone()
     assert total["cnt"] == 1

@@ -98,7 +98,7 @@ def _ingest_killmails(db, killmails: list[dict]) -> int:
             timestamp = int(time.time())
 
         try:
-            db.execute(
+            cursor = db.execute(
                 """INSERT OR IGNORE INTO killmails
                 (killmail_id, victim_character_id, victim_name,
                  victim_corp_id,
@@ -122,7 +122,8 @@ def _ingest_killmails(db, killmails: list[dict]) -> int:
                     json.dumps(raw),
                 ),
             )
-            count += 1
+            if cursor.rowcount > 0:
+                count += 1
         except Exception as e:
             logger.error("Killmail ingest error: %s", e)
     return count
@@ -148,7 +149,7 @@ def _ingest_smart_assemblies(db, assemblies: list[dict]) -> int:
                 return None
 
         try:
-            db.execute(
+            cursor = db.execute(
                 """INSERT OR IGNORE INTO smart_assemblies
                 (assembly_id, assembly_type, name, state,
                  solar_system_id, solar_system_name,
@@ -170,7 +171,8 @@ def _ingest_smart_assemblies(db, assemblies: list[dict]) -> int:
                     json.dumps(raw),
                 ),
             )
-            count += 1
+            if cursor.rowcount > 0:
+                count += 1
         except Exception as e:
             logger.error("Assembly ingest error: %s", e)
     return count
@@ -252,9 +254,14 @@ def _ingest_subscriptions(db, assemblies: list[dict]) -> int:
 
 
 def _update_entities(db) -> None:
-    """Rebuild entity stats from event tables. Lightweight — runs each cycle."""
+    """Rebuild entity stats from event tables.
+
+    Uses direct assignment (not accumulation) for counts to prevent
+    double-counting on repeated polls. Recomputes event_count as sum
+    of all activity types at the end.
+    """
     try:
-        # Characters from killmails (victims)
+        # Characters from killmails (victims) — set death_count directly
         db.execute("""
             INSERT INTO entities (entity_id, entity_type, display_name,
                 first_seen, last_seen, death_count, event_count)
@@ -270,12 +277,10 @@ def _update_entities(db) -> None:
                     entities.display_name
                 ),
                 death_count = excluded.death_count,
-                event_count = entities.event_count + excluded.event_count,
                 updated_at = unixepoch()
         """)
 
         # Kill counts from attacker data (JSON arrays)
-        # Extract attacker addresses from killmails and count kills per attacker
         rows = db.execute(
             "SELECT attacker_character_ids FROM killmails WHERE attacker_character_ids != '[]'"
         ).fetchall()
@@ -297,7 +302,7 @@ def _update_entities(db) -> None:
                 (kc, entity_id),
             )
 
-        # Characters from gate events
+        # Characters from gate events — set gate_count directly
         db.execute("""
             INSERT INTO entities (entity_id, entity_type,
                 first_seen, last_seen, gate_count, event_count)
@@ -308,7 +313,6 @@ def _update_entities(db) -> None:
             ON CONFLICT(entity_id) DO UPDATE SET
                 last_seen = MAX(entities.last_seen, excluded.last_seen),
                 gate_count = excluded.gate_count,
-                event_count = entities.event_count + excluded.event_count,
                 updated_at = unixepoch()
         """)
 
@@ -328,6 +332,16 @@ def _update_entities(db) -> None:
                     entities.display_name
                 ),
                 updated_at = unixepoch()
+        """)
+
+        # Recompute event_count as sum of all activity types
+        db.execute("""
+            UPDATE entities SET
+                event_count = COALESCE(kill_count, 0)
+                            + COALESCE(death_count, 0)
+                            + COALESCE(gate_count, 0),
+                updated_at = unixepoch()
+            WHERE entity_type = 'character'
         """)
     except Exception as e:
         logger.error("Entity update error: %s", e)
