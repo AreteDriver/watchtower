@@ -64,8 +64,11 @@ async def lifespan(app: FastAPI):
                 interval_seconds=settings.WARDEN_INTERVAL_SECONDS,
             )
         )
-        logger.info("Warden enabled — %d iterations, %dh max",
-                     settings.WARDEN_MAX_ITERATIONS, settings.WARDEN_MAX_DURATION_HOURS)
+        logger.info(
+            "Warden enabled — %d iterations, %dh max",
+            settings.WARDEN_MAX_ITERATIONS,
+            settings.WARDEN_MAX_DURATION_HOURS,
+        )
 
     yield
 
