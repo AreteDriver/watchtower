@@ -20,15 +20,19 @@ function timeAgo(ts: number | null): string {
 export function OrbitalZones() {
   const [zones, setZones] = useState<OrbitalZone[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
   const [filter, setFilter] = useState('');
   const [selectedZone, setSelectedZone] = useState<string | null>(null);
   const [history, setHistory] = useState<FeralAiEvent[]>([]);
 
   useEffect(() => {
+    setLoading(true);
+    setError(false);
     api.orbitalZones(filter || undefined)
       .then((r) => { setZones(r.data); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, [filter]);
+      .catch(() => { setError(true); setLoading(false); });
+  }, [filter, retryKey]);
 
   const loadHistory = (zoneId: string) => {
     if (selectedZone === zoneId) {
@@ -42,6 +46,20 @@ export function OrbitalZones() {
   };
 
   if (loading) return <div className="text-[var(--eve-dim)]">Loading zones...</div>;
+
+  if (error) {
+    return (
+      <div className="text-xs text-[var(--eve-red)]">
+        Failed to load orbital zones.{' '}
+        <button
+          onClick={() => { setError(false); setRetryKey((k) => k + 1); }}
+          className="underline hover:text-[var(--eve-text)] transition-colors"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   const evolved = zones.filter((z) => z.feral_ai_tier >= 2);
 

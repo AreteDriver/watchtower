@@ -18,18 +18,36 @@ export function CloneStatus() {
   const [clones, setClones] = useState<Clone[]>([]);
   const [queue, setQueue] = useState<Clone[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
+    setLoading(true);
+    setError(false);
     Promise.all([api.clones(), api.cloneQueue()])
       .then(([c, q]) => {
         setClones(c.data);
         setQueue(q.data);
         setLoading(false);
       })
-      .catch(() => setLoading(false));
-  }, []);
+      .catch(() => { setError(true); setLoading(false); });
+  }, [retryKey]);
 
   if (loading) return <div className="text-[var(--eve-dim)]">Loading clones...</div>;
+
+  if (error) {
+    return (
+      <div className="text-xs text-[var(--eve-red)]">
+        Failed to load clone status.{' '}
+        <button
+          onClick={() => { setError(false); setRetryKey((k) => k + 1); }}
+          className="underline hover:text-[var(--eve-text)] transition-colors"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   const lowReserve = clones.length < CLONE_RESERVE_THRESHOLD;
 

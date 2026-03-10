@@ -265,10 +265,252 @@ def seed(db_path: str, quiet: bool = False) -> str:
     ms = detect_gate_milestones(conn)
     conn.commit()
 
+    # -- Clone Blueprints --
+    if not quiet:
+        print("Seeding clone blueprints...")
+    blueprints = [
+        ("Standard Clone", 1, 300),
+        ("Enhanced Clone", 2, 600),
+        ("Augmented Clone", 3, 1200),
+        ("Combat Clone", 4, 1800),
+    ]
+    bp_ids = []
+    for bp_name, tier, mtime in blueprints:
+        bp_id = _mid("bp", bp_name)
+        bp_ids.append(bp_id)
+        conn.execute(
+            "INSERT INTO clone_blueprints (blueprint_id,name,tier,"
+            "materials,manufacture_time_sec) VALUES (?,?,?,?,?)",
+            (
+                bp_id,
+                bp_name,
+                tier,
+                json.dumps({"biomass": tier * 50, "nanites": tier * 20}),
+                mtime,
+            ),
+        )
+    conn.commit()
+
+    # -- Orbital Zones --
+    if not quiet:
+        print("Seeding orbital zones...")
+    zone_names = [
+        "Theta Orbital",
+        "Kappa Station",
+        "Lambda Ring",
+        "Sigma Perimeter",
+        "Tau Anchorage",
+        "Upsilon Dock",
+        "Phi Relay",
+    ]
+    zone_tiers = [0, 1, 2, 0, 1, 3, 2]
+    zones = []
+    for i, zname in enumerate(zone_names):
+        zid = _mid("zone", zname)
+        sys_id = _mid("sys", SYSTEMS[i % len(SYSTEMS)])
+        tier = zone_tiers[i]
+        last_scan = now - random.randint(0, 2 * DAY)
+        zones.append({"id": zid, "name": zname, "sys": sys_id, "tier": tier})
+        conn.execute(
+            "INSERT INTO orbital_zones (zone_id,name,solar_system_id,"
+            "x,y,z,feral_ai_tier,last_scanned) VALUES (?,?,?,?,?,?,?,?)",
+            (
+                zid,
+                zname,
+                sys_id,
+                random.uniform(-1e9, 1e9),
+                random.uniform(-1e9, 1e9),
+                random.uniform(-1e9, 1e9),
+                tier,
+                last_scan,
+            ),
+        )
+    conn.commit()
+
+    # -- Feral AI Events --
+    if not quiet:
+        print("Seeding feral AI events...")
+    feral_event_types = ["tier_change", "escalation", "de-escalation", "surge"]
+    feral_severities = ["info", "warning", "critical"]
+    feral_count = 0
+    # Escalation arcs for first two zones with tier > 0
+    for z in zones[:3]:
+        if z["tier"] == 0:
+            continue
+        arc_ts = start + random.randint(0, 3 * DAY)
+        for step in range(z["tier"]):
+            conn.execute(
+                "INSERT INTO feral_ai_events (zone_id,event_type,old_tier,"
+                "new_tier,severity,timestamp) VALUES (?,?,?,?,?,?)",
+                (
+                    z["id"],
+                    "escalation",
+                    step,
+                    step + 1,
+                    "warning" if step < 2 else "critical",
+                    arc_ts + step * random.randint(3600, DAY),
+                ),
+            )
+            feral_count += 1
+    # Random events for remaining slots
+    while feral_count < 13:
+        z = random.choice(zones)
+        old_t = random.randint(0, 2)
+        new_t = old_t + random.choice([-1, 1])
+        new_t = max(0, min(3, new_t))
+        conn.execute(
+            "INSERT INTO feral_ai_events (zone_id,event_type,old_tier,"
+            "new_tier,severity,timestamp) VALUES (?,?,?,?,?,?)",
+            (
+                z["id"],
+                random.choice(feral_event_types),
+                old_t,
+                new_t,
+                random.choice(feral_severities),
+                start + random.randint(0, 6 * DAY),
+            ),
+        )
+        feral_count += 1
+    conn.commit()
+
+    # -- Scans --
+    if not quiet:
+        print("Seeding scans...")
+    scan_results = ["CLEAR", "ANOMALY", "HOSTILE", "UNKNOWN"]
+    scan_weights = [0.4, 0.25, 0.2, 0.15]
+    scan_count = random.randint(22, 28)
+    for s in range(scan_count):
+        z = random.choice(zones)
+        p = random.choice(pilots)
+        result = random.choices(scan_results, weights=scan_weights, k=1)[0]
+        conn.execute(
+            "INSERT INTO scans (scan_id,zone_id,scanner_id,scanner_name,"
+            "result_type,result_data,scanned_at) VALUES (?,?,?,?,?,?,?)",
+            (
+                f"scan-{s:04d}",
+                z["id"],
+                p["id"],
+                p["name"],
+                result,
+                json.dumps({"signal_strength": round(random.uniform(0.1, 1.0), 2)}),
+                start + random.randint(0, 6 * DAY),
+            ),
+        )
+    conn.commit()
+
+    # -- Scan Intel --
+    if not quiet:
+        print("Seeding scan intel...")
+    threat_sigs = [
+        "feral_swarm",
+        "energy_spike",
+        "unknown_signature",
+        "phase_anomaly",
+        "dormant_hive",
+    ]
+    anomaly_types = ["spatial_rift", "energy_bloom", "signal_ghost", "mass_shadow"]
+    intel_count = 0
+    for z in zones:
+        hostile_scans = _count(
+            conn,
+            "SELECT COUNT(*) as cnt FROM scans "
+            "WHERE zone_id=? AND result_type IN ('HOSTILE','ANOMALY')",
+            (z["id"],),
+        )
+        if hostile_scans > 0:
+            conn.execute(
+                "INSERT INTO scan_intel (zone_id,threat_signature,"
+                "anomaly_type,confidence,reported_at) VALUES (?,?,?,?,?)",
+                (
+                    z["id"],
+                    random.choice(threat_sigs),
+                    random.choice(anomaly_types),
+                    round(random.uniform(0.4, 0.95), 2),
+                    now - random.randint(0, 2 * DAY),
+                ),
+            )
+            intel_count += 1
+    # Pad to at least 5 intel entries
+    while intel_count < 5:
+        z = random.choice(zones)
+        conn.execute(
+            "INSERT INTO scan_intel (zone_id,threat_signature,"
+            "anomaly_type,confidence,reported_at) VALUES (?,?,?,?,?)",
+            (
+                z["id"],
+                random.choice(threat_sigs),
+                random.choice(anomaly_types),
+                round(random.uniform(0.3, 0.85), 2),
+                now - random.randint(0, 3 * DAY),
+            ),
+        )
+        intel_count += 1
+    conn.commit()
+
+    # -- Clones --
+    if not quiet:
+        print("Seeding clones...")
+    clone_statuses = ["active", "manufacturing"]
+    clone_count = random.randint(8, 12)
+    for c in range(clone_count):
+        p = pilots[c % len(pilots)]
+        z = random.choice(zones)
+        status = random.choices(clone_statuses, weights=[0.7, 0.3], k=1)[0]
+        conn.execute(
+            "INSERT INTO clones (clone_id,owner_id,owner_name,blueprint_id,"
+            "status,location_zone_id,manufactured_at) VALUES (?,?,?,?,?,?,?)",
+            (
+                f"clone-{c:04d}",
+                p["id"],
+                p["name"],
+                random.choice(bp_ids),
+                status,
+                z["id"],
+                start + random.randint(0, 5 * DAY),
+            ),
+        )
+    conn.commit()
+
+    # -- Crowns --
+    if not quiet:
+        print("Seeding crowns...")
+    crown_types = ["warrior", "merchant", "explorer", "diplomat", "engineer"]
+    crown_count = random.randint(10, 15)
+    for cr in range(crown_count):
+        p = pilots[cr % len(pilots)]
+        ct = random.choice(crown_types)
+        conn.execute(
+            "INSERT INTO crowns (crown_id,character_id,character_name,"
+            "crown_type,attributes,chain_tx_id,equipped_at) VALUES (?,?,?,?,?,?,?)",
+            (
+                f"crown-{cr:04d}",
+                p["id"],
+                p["name"],
+                ct,
+                json.dumps({"rank": random.randint(1, 5), "bonus": f"{ct}_mastery"}),
+                f"0x{random.randbytes(16).hex()}",
+                start + random.randint(0, 6 * DAY),
+            ),
+        )
+    conn.commit()
+
     # -- Summary --
     if not quiet:
         print(f"\n=== Demo DB Ready ({db_path}) ===")
-        for t in ("entities", "killmails", "gate_events", "entity_titles", "story_feed"):
+        for t in (
+            "entities",
+            "killmails",
+            "gate_events",
+            "entity_titles",
+            "story_feed",
+            "orbital_zones",
+            "feral_ai_events",
+            "scans",
+            "scan_intel",
+            "clones",
+            "clone_blueprints",
+            "crowns",
+        ):
             print(f"  {t}: {_count(conn, f'SELECT COUNT(*) as cnt FROM {t}')}")
         print(f"  story_feed breakdown: {cl} clusters, {ne} new, {ms} milestones")
         print(f"  gate_events total: {ge}")

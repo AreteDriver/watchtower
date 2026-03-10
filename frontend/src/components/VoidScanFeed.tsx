@@ -19,19 +19,43 @@ function timeAgo(ts: number): string {
 export function VoidScanFeed() {
   const [scans, setScans] = useState<ScanResult[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
-    const load = () => {
+    setLoading(true);
+    setError(false);
+    const load = (isInitial: boolean) => {
       api.scanFeed(20)
-        .then((r) => { setScans(r.data); setLoading(false); })
-        .catch(() => setLoading(false));
+        .then((r) => {
+          setScans(r.data);
+          setLoading(false);
+        })
+        .catch(() => {
+          if (isInitial) setError(true);
+          setLoading(false);
+        });
     };
-    load();
-    const interval = setInterval(load, 30000); // refresh every 30s
+    load(true);
+    const interval = setInterval(() => load(false), 30000);
     return () => clearInterval(interval);
-  }, []);
+  }, [retryKey]);
 
   if (loading) return <div className="text-[var(--eve-dim)]">Loading scans...</div>;
+
+  if (error) {
+    return (
+      <div className="text-xs text-[var(--eve-red)]">
+        Failed to load scan feed.{' '}
+        <button
+          onClick={() => { setError(false); setRetryKey((k) => k + 1); }}
+          className="underline hover:text-[var(--eve-text)] transition-colors"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   const hostileZones = new Set(
     scans.filter((s) => s.zone_hostile_recent).map((s) => s.zone_id)

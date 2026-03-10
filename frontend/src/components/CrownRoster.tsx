@@ -14,18 +14,36 @@ export function CrownRoster() {
   const [crowns, setCrowns] = useState<CrownEntry[]>([]);
   const [roster, setRoster] = useState<CrownRosterData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
+    setLoading(true);
+    setError(false);
     Promise.all([api.crowns(), api.crownRoster()])
       .then(([c, r]) => {
         setCrowns(c.data);
         setRoster(r.data);
         setLoading(false);
       })
-      .catch(() => setLoading(false));
-  }, []);
+      .catch(() => { setError(true); setLoading(false); });
+  }, [retryKey]);
 
   if (loading) return <div className="text-[var(--eve-dim)]">Loading crowns...</div>;
+
+  if (error) {
+    return (
+      <div className="text-xs text-[var(--eve-red)]">
+        Failed to load crown roster.{' '}
+        <button
+          onClick={() => { setError(false); setRetryKey((k) => k + 1); }}
+          className="underline hover:text-[var(--eve-text)] transition-colors"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3">
