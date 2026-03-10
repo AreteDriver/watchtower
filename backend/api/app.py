@@ -23,6 +23,7 @@ from backend.core.config import settings
 from backend.core.logger import get_logger
 from backend.db.database import close_db, get_db
 from backend.ingestion.poller import run_poller
+from backend.warden.warden import run_warden
 
 logger = get_logger("app")
 
@@ -54,10 +55,24 @@ async def lifespan(app: FastAPI):
     poller_task = asyncio.create_task(run_poller())
     intelligence_task = asyncio.create_task(_run_intelligence_loops())
     bot_task = asyncio.create_task(run_bot())
+    warden_task = None
+    if settings.WARDEN_ENABLED:
+        warden_task = asyncio.create_task(
+            run_warden(
+                max_iterations=settings.WARDEN_MAX_ITERATIONS,
+                max_duration_hours=settings.WARDEN_MAX_DURATION_HOURS,
+                interval_seconds=settings.WARDEN_INTERVAL_SECONDS,
+            )
+        )
+        logger.info("Warden enabled — %d iterations, %dh max",
+                     settings.WARDEN_MAX_ITERATIONS, settings.WARDEN_MAX_DURATION_HOURS)
 
     yield
 
-    for task in (poller_task, intelligence_task, bot_task):
+    tasks = [poller_task, intelligence_task, bot_task]
+    if warden_task:
+        tasks.append(warden_task)
+    for task in tasks:
         task.cancel()
         try:
             await task

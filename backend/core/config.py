@@ -29,6 +29,12 @@ class Settings(BaseSettings):
     EVE_SSO_SECRET_KEY: str = ""
     EVE_SSO_CALLBACK_URL: str = ""
 
+    # Warden (autonomous threat intelligence loop)
+    WARDEN_ENABLED: bool = True
+    WARDEN_MAX_ITERATIONS: int = 10
+    WARDEN_MAX_DURATION_HOURS: int = 24
+    WARDEN_INTERVAL_SECONDS: int = 300  # 5 minutes between cycles
+
     # Server
     HOST: str = "0.0.0.0"
     PORT: int = 8000
