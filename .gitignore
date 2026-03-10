@@ -21,6 +21,10 @@ data/*.db
 data/*.db-wal
 data/*.db-shm
 
+# Coverage
+.coverage
+htmlcov/
+
 # IDE
 .vscode/
 .idea/

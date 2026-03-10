@@ -30,17 +30,22 @@ EVE_SSO_AUTH_URL = "https://login.eveonline.com/v2/oauth/authorize"
 EVE_SSO_TOKEN_URL = "https://login.eveonline.com/v2/oauth/token"
 EVE_SSO_VERIFY_URL = "https://esi.evetech.net/verify/"
 
-# In-memory state store for CSRF protection (short-lived)
+# In-memory state store for CSRF protection (short-lived, bounded)
 _pending_states: dict[str, float] = {}
 STATE_TTL = 300  # 5 minutes
+MAX_PENDING_STATES = 1000
 
 
 def _clean_expired_states() -> None:
-    """Remove expired OAuth states."""
+    """Remove expired OAuth states. Cap total to prevent memory exhaustion."""
     now = time.time()
     expired = [k for k, v in _pending_states.items() if now - v > STATE_TTL]
     for k in expired:
         del _pending_states[k]
+    # Hard cap: evict oldest if still over limit
+    while len(_pending_states) > MAX_PENDING_STATES:
+        oldest = min(_pending_states, key=_pending_states.get)  # type: ignore[arg-type]
+        del _pending_states[oldest]
 
 
 def _generate_session_token() -> str:

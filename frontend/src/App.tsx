@@ -23,12 +23,18 @@ import { AccountPage } from './components/AccountPage';
 import { EntityPage } from './components/EntityPage';
 import { TierGate } from './components/TierGate';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { CycleBanner } from './components/CycleBanner';
+import { OrbitalZones } from './components/OrbitalZones';
+import { VoidScanFeed } from './components/VoidScanFeed';
+import { CloneStatus } from './components/CloneStatus';
+import { CrownRoster } from './components/CrownRoster';
 import { useAuth } from './contexts/AuthContext';
 
-type Tab = 'intel' | 'tactical' | 'compare' | 'feed' | 'account';
+type Tab = 'intel' | 'tactical' | 'c5' | 'compare' | 'feed' | 'account';
 
 function tabFromPath(path: string): Tab {
   if (path.startsWith('/tactical')) return 'tactical';
+  if (path.startsWith('/c5')) return 'c5';
   if (path.startsWith('/compare')) return 'compare';
   if (path.startsWith('/feed')) return 'feed';
   if (path.startsWith('/account')) return 'account';
@@ -81,6 +87,7 @@ function Dashboard() {
     const paths: Record<Tab, string> = {
       intel: '/',
       tactical: '/tactical',
+      c5: '/c5',
       compare: '/compare',
       feed: '/feed',
       account: '/account',
@@ -91,6 +98,7 @@ function Dashboard() {
   const tabs: { key: Tab; label: string }[] = [
     { key: 'intel', label: 'Intelligence' },
     { key: 'tactical', label: 'Tactical' },
+    { key: 'c5', label: 'Shroud' },
     { key: 'compare', label: 'Compare' },
     { key: 'feed', label: 'Feed & Rankings' },
     { key: 'account', label: wallet ? 'Account' : 'Connect' },
@@ -239,6 +247,27 @@ function Dashboard() {
         </ErrorBoundary>
       )}
 
+      {activeTab === 'c5' && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="md:col-span-2 space-y-6">
+            <ErrorBoundary>
+              <OrbitalZones />
+            </ErrorBoundary>
+            <ErrorBoundary>
+              <CloneStatus />
+            </ErrorBoundary>
+          </div>
+          <div className="space-y-6">
+            <ErrorBoundary>
+              <VoidScanFeed />
+            </ErrorBoundary>
+            <ErrorBoundary>
+              <CrownRoster />
+            </ErrorBoundary>
+          </div>
+        </div>
+      )}
+
       {activeTab === 'feed' && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <ErrorBoundary>
@@ -264,6 +293,9 @@ export default function App() {
 
   return (
     <div className="min-h-screen">
+      {/* Cycle Banner */}
+      <CycleBanner />
+
       {/* Header */}
       <header className="border-b border-[var(--eve-border)] px-4 sm:px-6 py-3 sm:py-4">
         <div className="max-w-7xl mx-auto flex justify-between items-center">

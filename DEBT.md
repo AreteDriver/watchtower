@@ -1,17 +1,19 @@
 # Technical Debt Audit — Witness
 
 **Project**: Witness — The Living Memory of EVE Frontier
-**Audit Date**: 2026-03-08
+**Audit Date**: 2026-03-10
 **Auditor**: Claude Opus 4.6
-**Hackathon Deadline**: March 11-31, 2026
+**Context**: EVE Frontier x Sui Hackathon 2026 (March 11-31)
+**Codebase**: 6,157 lines backend Python, 7,197 lines tests, ~36 frontend TS/TSX files
+**Commits**: 36 (active sprint from March 6-10)
 
 ---
 
 ## Executive Summary
 
-**Overall Grade: B (7.2/10)**
+**Overall Grade: B+ (7.8/10)**
 
-Witness is an impressively complete hackathon project with strong test coverage (238 tests, 90% coverage), clean architecture, and a solid CI/CD pipeline. No critical security blockers were found. The main gaps are CORS wide-open for production, some f-string logging (minor CodeQL risk), missing `.pem`/`.key` in `.gitignore`, and the bot module (`commands.py` at 617 lines) being untested. For a hackathon submission, this is well above average.
+Witness is a mature hackathon project with strong fundamentals: 383 tests passing (42 skipped), robust CI/CD with 4-job pipeline (lint/test/frontend/security), proper secret management, SSRF prevention, rate limiting, path traversal protection, and security headers. No critical security blockers found. The codebase is clean — zero TODO/FIXME markers, zero bare excepts, proper logging throughout. Main gaps: 3 ruff lint violations in tests, `discord_bot.py` at 752 lines (largest file), `eve_sessions` table stores access tokens in plaintext, and no SQLite backup strategy for production.
 
 ---
 
@@ -19,53 +21,51 @@ Witness is an impressively complete hackathon project with strong test coverage 
 
 | Category | Score | Weight | Weighted |
 |---|---|---|---|
-| Security | 7/10 | blocker | no block |
+| Security | 8/10 | blocker | no block |
 | Correctness | 8/10 | 2x | 16 |
 | Infrastructure | 8/10 | 2x | 16 |
 | Maintainability | 7/10 | 1x | 7 |
 | Documentation | 9/10 | 1x | 9 |
-| Freshness | 8/10 | 0.5x | 4 |
-| **Weighted Total** | | **6.5x** | **52** |
-| **Weighted Average** | | | **8.0** |
-| **Final (adjusted)** | | | **7.2** |
+| Freshness | 9/10 | 0.5x | 4.5 |
+| **Weighted Total** | | **6.5x** | **52.5** |
+| **Weighted Average** | | | **8.1** |
+| **Final (adjusted)** | | | **7.8** |
 
-Adjustment: -0.8 for CORS wildcard in production + untested bot module (617 lines excluded from coverage).
+Adjustment: -0.3 for plaintext access tokens in DB + 3 lint failures in CI.
 
 ---
 
-## 1. Security (7/10)
+## 1. Security (8/10)
 
 ### Findings
 
 | Severity | Finding | Location |
 |---|---|---|
-| **MEDIUM** | CORS `allow_origins=["*"]` with `allow_credentials=True` | `backend/api/app.py:72-76` |
-| **MEDIUM** | `.gitignore` missing `.pem`, `.key`, `.pem` file patterns | `.gitignore` |
-| **LOW** | pip 24.0 has 2 CVEs (CVE-2025-8869, CVE-2026-1703) | `.venv/` |
-| **LOW** | 7 f-string logging calls (CodeQL log-injection risk if user data flows in) | `commands.py`, `narrative.py`, `oracle.py` |
-| **INFO** | `sk-test-key` in test file — harmless test mock | `tests/test_narrative.py` |
+| **MEDIUM** | EVE SSO access/refresh tokens stored as plaintext in `eve_sessions` table | `backend/db/database.py:139-140`, `backend/api/auth.py:160-163` |
+| **MEDIUM** | In-memory OAuth state store (`_pending_states`) not bounded; potential memory leak under attack | `backend/api/auth.py:34` |
+| **LOW** | CORS allows `allow_headers=["*"]` — should whitelist specific headers | `backend/api/app.py:87` |
+| **LOW** | 3 ruff lint violations (line too long) in `tests/test_cycle5.py` — CI lint job will fail | `tests/test_cycle5.py:30,47,52` |
+| **INFO** | `sk-test-key` in test file — harmless mock value | `tests/test_narrative.py:238,262,279` |
 
 ### What's Clean
 
-- No hardcoded secrets in source (confirmed via regex scan)
-- `.env` properly in `.gitignore`
-- `contracts/.env.example` warns "NEVER commit the real .env"
-- All credentials loaded via `pydantic-settings` with env prefix
-- SQL queries use parameterized statements throughout (no injection)
-- No command injection vectors found
-- No SSRF — external calls only to configured `WORLD_API_BASE`
-- `serve_frontend` has path traversal protection via `is_relative_to()` check
-- CI has gitleaks, pip-audit, and CodeQL scanning
-- `_ALLOWED_SORTS` frozenset prevents SQL injection in ORDER BY
-
-### CORS Detail
-
-```python
-allow_origins=["*"],
-allow_credentials=True,
-```
-
-This combination is problematic per the CORS spec. Browsers will block credentialed requests when origin is `*`. More importantly, for production deployment this should be locked to the actual frontend domain.
+- **No hardcoded secrets** in source (regex scan confirmed — only test mocks)
+- **`.env` properly gitignored** — only `.env.example` tracked (confirmed via `git ls-files`)
+- **No .db files in git** — `data/*.db` in `.gitignore`, confirmed no DB files tracked
+- **`.pem`, `.key`, `.p12` patterns** all in `.gitignore`
+- **All credentials via `pydantic-settings`** with `WITNESS_` env prefix
+- **Parameterized SQL throughout** — no string interpolation in queries with user input
+- **SSRF prevention** on webhook URLs — private IP regex + domain allowlist (Discord only)
+- **Path traversal protection** — `is_relative_to(FRONTEND_DIR)` check in static file serving
+- **Security headers** — X-Content-Type-Options, X-Frame-Options, X-XSS-Protection, Referrer-Policy
+- **Rate limiting** — slowapi on all sensitive endpoints (fingerprint, compare, narrative, battle-report, watches, subscribe)
+- **Tier gating** — subscription-based access control on premium endpoints
+- **CORS locked to specific origins** — localhost:5173, 127.0.0.1:5173, fly.dev (NOT wildcard)
+- **CI security pipeline** — pip-audit, gitleaks (--no-git mode), CodeQL (weekly + PR)
+- **Dependabot** configured for pip and GitHub Actions
+- **OAuth state validation** — CSRF protection with 5-min TTL on OAuth states
+- **Session tokens** — `secrets.token_urlsafe(32)` + SHA-256 hash stored (not raw token)
+- **Error masking** — `raise ... from None` prevents stack trace leakage to clients
 
 ---
 
@@ -74,31 +74,32 @@ This combination is problematic per the CORS spec. Browsers will block credentia
 ### Test Results
 
 ```
-238 passed, 0 failed, 1 warning
-Coverage: 89.83% (gate: 80%)
+383 passed, 42 skipped, 0 failed
+Coverage gate: fail_under = 80%
+Test matrix: Python 3.11 + 3.12
 ```
 
 ### Findings
 
 | Severity | Finding | Detail |
 |---|---|---|
-| **MEDIUM** | `backend/bot/commands.py` (617 lines) has zero tests | Excluded from coverage via `omit = ["backend/bot/*"]` |
-| **MEDIUM** | `backend/api/app.py` at 48% coverage | Lifespan, intelligence loop, frontend serving untested |
-| **LOW** | `backend/analysis/story_feed.py` at 76% coverage | Lines 210-275 uncovered |
-| **LOW** | `backend/ingestion/poller.py` at 70% coverage | `run_poller()` loop and some error paths uncovered |
-| **LOW** | `backend/analysis/naming_engine.py` at 76% coverage | Several title computation branches uncovered |
-| **INFO** | `discord.py` deprecation warning: `audioop` removed in Python 3.13 | Test output |
+| **MEDIUM** | `discord_bot.py` (752 lines) — tests exist but 42 skipped tests may relate to mocking complexity | `tests/test_bot.py` (256 lines), `tests/test_commands.py` (1,221 lines) |
+| **LOW** | `_ingest_killmails` count always increments even on `INSERT OR IGNORE` (no-op) | `backend/ingestion/poller.py:124` — `count += 1` fires regardless of actual insert |
+| **LOW** | `_update_entities` accumulates `event_count` on every poll cycle (double-counting) | `backend/ingestion/poller.py:273` — `event_count = entities.event_count + excluded.event_count` |
+| **LOW** | 3 ruff E501 violations in tests — CI lint job currently fails | `tests/test_cycle5.py:30,47,52` |
+| **INFO** | `pytest-asyncio==1.3.0` in lockfile but `>=0.24.0` in pyproject.toml | Version mismatch in lock vs spec — lock has newer version |
 
 ### What's Solid
 
-- 238 tests covering 16 test files
-- All tests pass cleanly
-- Good test isolation — each test file sets up its own in-memory SQLite
-- `respx` used properly for HTTP mocking
-- Entry point `uvicorn backend.api.app:app` verified in Dockerfile CMD
-- Type hints on 73/151 functions (48%) — decent for hackathon speed
-- All `async def` route handlers properly defined
-- Pydantic models for request validation
+- **383 tests across 26 test files** — comprehensive coverage
+- **26 backend modules, all tested** — including analysis, API, bot, ingestion, database
+- **Test isolation** — each test gets its own in-memory SQLite
+- **`respx` for HTTP mocking** — proper async HTTP client testing
+- **Pydantic request validation** — `SubscribeRequest` uses regex pattern for wallet addresses
+- **Query parameter validation** — `min_length`, `max_length`, `le` constraints on all Query params
+- **Sort injection prevention** — `_ALLOWED_SORTS` frozenset whitelist
+- **Async/sync correct** — async routes, sync analysis functions, proper `check_same_thread=False`
+- **Entry point verified** — Dockerfile CMD matches `backend.api.app:app`
 
 ---
 
@@ -108,21 +109,22 @@ Coverage: 89.83% (gate: 80%)
 
 | Severity | Finding | Detail |
 |---|---|---|
-| **MEDIUM** | Dockerfile `pip install .` doesn't pin deps | No `requirements.txt` or lock file; builds may not be reproducible |
-| **LOW** | Dockerfile missing `--no-cache-dir` on second install | Minor — but line 6 has it, COPY happens after |
-| **LOW** | `docker-compose.yml` minimal — no healthcheck | Single service, no restart policy detail |
-| **LOW** | `frontend/dist/` committed to git but also in `.gitignore` | Contradictory — dist exists in repo |
-| **INFO** | `fly.toml` `min_machines_running = 0` — cold starts | Acceptable for hackathon |
+| **MEDIUM** | No SQLite backup strategy (Litestream or similar) | `fly.toml` has persistent volume but no backup |
+| **LOW** | `docker-compose.yml` has `restart: unless-stopped` but no healthcheck | Would improve container orchestration |
+| **LOW** | `fly.toml` `min_machines_running = 0` — cold starts on first request | Acceptable for hackathon; problematic for production |
+| **INFO** | `node_modules/` exists at project root (not in `.gitignore` path for root) | `.gitignore` has `node_modules/` which covers it |
 
 ### What's Solid
 
-- CI has 3 jobs: lint (ruff check + format), test (matrix 3.11/3.12), security (pip-audit + gitleaks)
-- CodeQL workflow with weekly schedule
-- Dependabot for pip and GitHub Actions
-- Fly.io config with persistent volume mount for SQLite
-- `force_https = true` in fly.toml
-- Docker image based on `python:3.12-slim` (good base)
-- `data/` directory properly created in Dockerfile
+- **CI pipeline** — 4 jobs: lint (ruff check + format), test (matrix 3.11/3.12 with coverage), frontend (npm ci/test/build), security (pip-audit + gitleaks)
+- **CodeQL workflow** — weekly schedule + push/PR triggers, Python language
+- **Dependabot** — pip + github-actions, weekly cadence
+- **Dockerfile** — `python:3.12-slim`, `--no-cache-dir`, copies only needed dirs
+- **`requirements.lock`** — pinned versions for reproducible builds (56 packages)
+- **Fly.io config** — persistent volume mount at `/app/data`, `force_https = true`, `auto_stop_machines`
+- **Docker Compose** — env_file, volume mount for data persistence
+- **Frontend build** — Vite 7 + TypeScript strict, built into `frontend/dist/` and served by FastAPI
+- **Separate frontend CI** — Node 22, npm ci, test, build
 
 ---
 
@@ -132,25 +134,26 @@ Coverage: 89.83% (gate: 80%)
 
 | Severity | Finding | Detail |
 |---|---|---|
-| **MEDIUM** | `backend/bot/commands.py` — 617 lines (god file) | Should split into commands + views + helpers |
-| **MEDIUM** | `backend/api/routes.py` — 464 lines | 28 endpoints in one file; could split by domain |
-| **LOW** | `backend/analysis/fingerprint.py` — 489 lines | Complex but cohesive; borderline |
-| **LOW** | Two Discord bot implementations | `bot/discord_bot.py` (256 lines) AND `bot/commands.py` (617 lines) |
-| **LOW** | 7 f-string logging calls | Should use `%s` style per Python best practice |
-| **INFO** | Global `_connection` singleton in `database.py` | Works for single-process, standard pattern for SQLite |
+| **MEDIUM** | `discord_bot.py` — 752 lines | Largest file; commands, autocomplete, views all in one. Should split by command group |
+| **MEDIUM** | `poller.py` — 629 lines | 8 ingest functions + run loop. Could split `_ingest_*` into `ingestion/ingesters.py` |
+| **LOW** | `routes.py` — 558 lines, 31 route functions | Could split into domain routers (entity, feed, intel, corp, subscription) |
+| **LOW** | `fingerprint.py` — 489 lines | Complex but cohesive; borderline acceptable |
+| **LOW** | `names.py` — 18 lines, only constants | Could merge into `naming_engine.py` to reduce module count |
+| **INFO** | Global `_connection` singleton in `database.py` | Standard pattern for SQLite; works for single-process |
 
 ### What's Clean
 
-- **Zero TODOs/FIXMEs/HACKs** in source code
-- Clean module structure: `analysis/`, `api/`, `bot/`, `core/`, `db/`, `ingestion/`
-- No dead code indicators (no commented-out blocks)
-- Consistent naming: snake_case throughout Python
-- `pathlib.Path` used everywhere (no `os.path`)
-- No bare `except:` — all exception handlers are typed
-- No `print()` calls in backend — proper logging throughout
-- No mutable default arguments
-- Proper `__init__.py` in all packages
-- Imports well-organized (stdlib, third-party, local)
+- **Zero TODO/FIXME/HACK markers** — confirmed via grep across all `.py` files
+- **Zero bare `except:` handlers** — all exception handlers catch specific types
+- **Zero `print()` calls** — proper `logging` module throughout via `get_logger()`
+- **Clean module structure** — 6 packages: `analysis/` (14 modules), `api/` (6), `bot/` (1), `core/` (2), `db/` (1), `ingestion/` (1)
+- **Consistent naming** — snake_case throughout Python, proper `__init__.py` in all packages
+- **`pathlib.Path` everywhere** — no `os.path` usage
+- **No mutable default arguments** — `conditions: dict = {}` in Pydantic model is safe (Pydantic copies)
+- **No commented-out code** in any file
+- **Docstrings coverage** — ~399 docstring markers across 26 backend files (module + function level)
+- **170 function definitions** with good ratio of documentation
+- **Well-organized imports** — stdlib, third-party, local separation
 
 ---
 
@@ -160,104 +163,108 @@ Coverage: 89.83% (gate: 80%)
 
 | Severity | Finding | Detail |
 |---|---|---|
-| **LOW** | No CHANGELOG.md | Not critical for hackathon |
-| **LOW** | No inline API docs (OpenAPI descriptions sparse) | FastAPI auto-docs work but could be richer |
-| **INFO** | No LICENSE file (just "MIT" in README) | Should add LICENSE file for hackathon submission |
+| **LOW** | No CHANGELOG.md | Conventional commits exist but no formal changelog |
+| **LOW** | README stats outdated — says "362 tests" but 383 now passing | `README.md:26` |
+| **INFO** | No OpenAPI endpoint descriptions beyond docstrings | FastAPI auto-docs work but sparse |
 
 ### What's Excellent
 
-- **README.md** — 295 lines, comprehensive:
+- **README.md** — 324 lines, hackathon-showcase quality:
   - Live demo link
-  - Architecture diagram (ASCII art)
-  - Full API endpoint table (28 endpoints)
-  - Quick start, Docker, configuration table
-  - Feature breakdown with earned titles table
-  - Discord bot command reference
-  - Hackathon context and "why"
-- **CLAUDE.md** — 5.2KB, well-structured project context
-- **docs/ASSEMBLY_GUIDE.md** — Smart Assembly deployment guide
-- **docs/DEMO_SCRIPT.md** — Hackathon presentation script
-- **`.env.example`** — Clear with comments
-- Docstrings on all major functions
-- Module-level docstrings on all Python files
-- Solidity contract fully documented with NatSpec
+  - ASCII architecture diagram showing full data flow
+  - Full API endpoint table (33 endpoints)
+  - Quick start, Docker, and configuration tables
+  - Feature breakdown organized by tier (Free/Tactical/Reputation)
+  - Earned titles with criteria tables
+  - Discord bot command reference (11 commands)
+  - Smart Contract subscription tier table
+  - Tech stack and design principles
+  - Hackathon context and "why Witness?"
+- **LICENSE** — MIT, proper copyright
+- **CLAUDE.md** — comprehensive project context with anti-patterns
+- **`.env.example`** — commented with confirmed API base URL
+- **docs/** — 4 documents: DEMO_SCRIPT.md, ASSEMBLY_GUIDE.md, api-notes.md, C5 task list
+- **Module-level docstrings** on all 26 Python files
+- **Function docstrings** on all public functions and route handlers
 
 ---
 
-## 6. Freshness (8/10)
+## 6. Freshness (9/10)
 
 ### Findings
 
 | Severity | Finding | Detail |
 |---|---|---|
-| **INFO** | All 29 commits from March 6-7, 2026 | 2-day sprint, consistent velocity |
-| **INFO** | `discord.py` `audioop` deprecation | Will break on Python 3.13 |
+| **INFO** | Last commit: 2026-03-10 01:39:19 | Less than 24 hours old |
+| **INFO** | `discord.py` `audioop` deprecation | Will break on Python 3.13+ |
 
-### Stack Versions
+### Stack Versions (from `requirements.lock`)
 
-| Component | Version | Current | Status |
-|---|---|---|---|
-| Python | 3.12 | 3.12.x | Current |
-| FastAPI | >=0.115.0 | 0.115.x | Current |
-| React | 19.2.0 | 19.x | Current |
-| Vite | 7.3.1 | 7.x | Current |
-| Tailwind | 4.2.1 | 4.x | Current |
-| TypeScript | 5.9.3 | 5.9.x | Current |
-| Solidity | 0.8.24 | 0.8.x | Current |
-| Pydantic | >=2.9.0 | 2.x | Current |
-| discord.py | >=2.4.0 | 2.x | Current (with deprecation) |
+| Component | Locked Version | Status |
+|---|---|---|
+| Python | 3.12.3 | Current stable |
+| FastAPI | 0.135.1 | Current |
+| Pydantic | 2.12.5 | Current |
+| uvicorn | 0.41.0 | Current |
+| httpx | 0.28.1 | Current |
+| anthropic | 0.84.0 | Current |
+| discord.py | 2.7.1 | Current (audioop deprecation) |
+| React | 19.2.0 | Current |
+| Vite | 7.3.1 | Current |
+| Tailwind CSS | 4.2.1 | Current |
+| TypeScript | 5.9.3 | Current |
 
-All dependencies are modern and on latest major versions. No stale packages.
+All 56 locked Python dependencies are recent versions. No stale or abandoned packages. Frontend deps all on latest majors.
 
 ---
 
-## Fix Recommendations (Ordered by ROI)
+## Fix Recommendations (Ordered by ROI: impact / effort)
 
-### High Impact / Low Effort (Do First)
+### Tier 1: High Impact / Low Effort (Do Before Hackathon)
 
-| # | Fix | Time | Impact |
-|---|---|---|---|
-| 1 | Lock CORS to actual frontend domain (or `localhost` + fly.dev) | 5 min | Security |
-| 2 | Add `.pem`, `.key`, `*.pem`, `*.key` to `.gitignore` | 2 min | Security |
-| 3 | Add `LICENSE` file (MIT) | 2 min | Hackathon polish |
-| 4 | Fix 7 f-string logger calls to use `%s` style | 10 min | CodeQL clean |
-| 5 | Pin pip version in `.venv` (`pip install --upgrade pip>=26.0`) | 2 min | CVE fix |
+| # | Fix | Effort | Impact | Category |
+|---|---|---|---|---|
+| 1 | Fix 3 ruff E501 violations in `tests/test_cycle5.py` | 5 min | CI lint passes | Correctness |
+| 2 | Update README test count (362 -> 383) | 2 min | Accuracy | Documentation |
+| 3 | Cap `_pending_states` dict size (e.g., max 1000 entries) | 5 min | Memory safety | Security |
 
-### Medium Impact / Medium Effort
+### Tier 2: Medium Impact / Medium Effort (During Hackathon)
 
-| # | Fix | Time | Impact |
-|---|---|---|---|
-| 6 | Add `requirements.txt` via `pip freeze` for reproducible Docker builds | 10 min | Infrastructure |
-| 7 | Add healthcheck to `docker-compose.yml` | 5 min | Infrastructure |
-| 8 | Remove `frontend/dist/` from git (it's in `.gitignore`) | 5 min | Cleanliness |
-| 9 | Resolve dual bot files — `discord_bot.py` vs `commands.py` | 30 min | Maintainability |
-| 10 | Add tests for `commands.py` or remove coverage omit | 2-4 hrs | Correctness |
+| # | Fix | Effort | Impact | Category |
+|---|---|---|---|---|
+| 4 | Fix `_ingest_killmails` count logic — check `lastrowid` or cursor changes | 15 min | Data accuracy | Correctness |
+| 5 | Fix `_update_entities` event_count double-counting on repeated polls | 30 min | Data accuracy | Correctness |
+| 6 | Add healthcheck to `docker-compose.yml` | 5 min | Container reliability | Infrastructure |
+| 7 | Encrypt or omit EVE SSO access/refresh tokens in `eve_sessions` (or store only session hash) | 30 min | Token security | Security |
+| 8 | Whitelist CORS `allow_headers` instead of `["*"]` | 5 min | Security hygiene | Security |
 
-### Low Impact / High Effort (Post-Hackathon)
+### Tier 3: Low Impact / Higher Effort (Post-Hackathon)
 
-| # | Fix | Time | Impact |
-|---|---|---|---|
-| 11 | Split `routes.py` into domain routers (entity, feed, intel, corp) | 1-2 hrs | Maintainability |
-| 12 | Boost `story_feed.py` and `poller.py` coverage to 90%+ | 2-3 hrs | Correctness |
-| 13 | Add rate limiting to API endpoints | 1-2 hrs | Security |
-| 14 | Add OpenAPI descriptions to all endpoints | 1 hr | Documentation |
-| 15 | Add type hints to remaining 78 functions | 2-3 hrs | Correctness |
+| # | Fix | Effort | Impact | Category |
+|---|---|---|---|---|
+| 9 | Split `discord_bot.py` (752 lines) into command groups | 1-2 hrs | Maintainability | Maintainability |
+| 10 | Split `routes.py` (558 lines) into domain routers | 1-2 hrs | Maintainability | Maintainability |
+| 11 | Split `poller.py` ingest functions into separate module | 1 hr | Maintainability | Maintainability |
+| 12 | Add Litestream for SQLite WAL backup to S3 | 2-3 hrs | Data durability | Infrastructure |
+| 13 | Add CHANGELOG.md with conventional commit parsing | 30 min | Documentation | Documentation |
+| 14 | Set `min_machines_running = 1` in fly.toml for production | 2 min | Latency | Infrastructure |
+| 15 | Investigate 42 skipped tests — ensure they're intentional | 1-2 hrs | Coverage confidence | Correctness |
 
 ---
 
 ## What's Done Well
 
-1. **Test discipline** — 238 tests, 90% coverage, test matrix (3.11/3.12), clean pass
-2. **Security posture** — No hardcoded secrets, parameterized SQL, gitleaks + CodeQL + pip-audit in CI
-3. **Architecture** — Clean separation: ingestion -> analysis -> API -> presentation
-4. **Resilience** — Poller designed to never crash; all errors logged, never raised
-5. **Documentation** — README is hackathon-showcase quality with architecture diagrams
-6. **Smart caching** — AI narrative cache by entity + event hash (avoids redundant API calls)
-7. **Full stack** — Python backend + React frontend + Solidity contract + Discord bot + deployment config
-8. **Modern stack** — All dependencies on latest versions, no legacy debt
-9. **Zero TODOs** — No deferred work markers in codebase
-10. **Dependency management** — Dependabot + CodeQL + pip-audit covering all angles
+1. **Test discipline** — 383 tests, 80%+ coverage gate enforced in CI, Python 3.11/3.12 matrix
+2. **Security layers** — rate limiting, SSRF prevention, path traversal protection, security headers, CORS locked to specific origins, tier-gated access control
+3. **CI/CD pipeline** — 4-job workflow (lint, test, frontend, security) + CodeQL + Dependabot
+4. **Architecture** — clean separation: ingestion -> analysis (14 modules) -> API -> presentation (React + Discord)
+5. **Resilience** — poller designed to never crash; all errors caught, logged, continued
+6. **Smart caching** — AI narrative cache by entity + event hash avoids redundant Anthropic API calls
+7. **Template fallback** — narrative engine works without API key via rule-based generation
+8. **Full stack delivery** — Python backend + React frontend + Solidity contract + Discord bot + Fly.io deployment
+9. **Modern, pinned stack** — all 56 Python deps locked, all on current versions
+10. **Code hygiene** — zero TODOs, zero bare excepts, zero print statements, zero commented-out code, proper logging
 
 ---
 
-*Generated by technical debt audit. No code was modified during this audit.*
+*Generated by technical debt audit on 2026-03-10. No code was modified during this audit.*

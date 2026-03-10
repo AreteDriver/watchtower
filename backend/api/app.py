@@ -11,9 +11,10 @@ from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
 
 from backend.analysis.naming_engine import refresh_all_titles
-from backend.analysis.oracle import check_watches
+from backend.analysis.oracle import check_c5_alerts, check_watches
 from backend.analysis.story_feed import generate_feed_items
 from backend.api.auth import router as auth_router
+from backend.api.cycle5 import router as cycle5_router
 from backend.api.events import router as events_router
 from backend.api.rate_limit import limiter
 from backend.api.routes import router
@@ -32,6 +33,7 @@ async def _run_intelligence_loops() -> None:
     while True:
         try:
             await check_watches()
+            await check_c5_alerts()
             generate_feed_items()
             # Refresh titles every 12th cycle (hourly at 5-min interval)
             if cycle % 12 == 0:
@@ -81,7 +83,7 @@ app.add_middleware(
     ],
     allow_credentials=False,
     allow_methods=["GET", "POST", "DELETE"],
-    allow_headers=["*"],
+    allow_headers=["Content-Type", "Authorization", "X-Wallet-Address", "X-EVE-Session"],
 )
 
 app.state.limiter = limiter
@@ -108,6 +110,7 @@ async def security_headers(request: Request, call_next):
 app.include_router(router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
 app.include_router(events_router, prefix="/api")
+app.include_router(cycle5_router, prefix="/api")
 
 # Serve frontend static files if built
 FRONTEND_DIR = (Path(__file__).parent.parent.parent / "frontend" / "dist").resolve()

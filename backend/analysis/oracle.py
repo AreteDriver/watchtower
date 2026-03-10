@@ -20,8 +20,11 @@ EVE_ORANGE = 0xFF6600
 EVE_RED = 0xFF0000
 EVE_YELLOW = 0xFFCC00
 EVE_GREEN = 0x00FF88
+EVE_PURPLE = 0x9B59B6
 
 COOLDOWN_SECONDS = 300  # 5 min between repeated alerts for same watch
+BLIND_SPOT_THRESHOLD = 1200  # 20 min without scan = blind spot
+CLONE_RESERVE_THRESHOLD = 5  # configurable via conditions
 
 
 async def fire_webhook(webhook_url: str, title: str, message: str, color: int = EVE_ORANGE):
@@ -198,4 +201,133 @@ async def check_watches() -> int:
     if fired > 0:
         db.commit()
         logger.info("Oracle fired %d alerts", fired)
+    return fired
+
+
+# ---------- Cycle 5: System-level alerts ----------
+# These fire to the global Discord webhook, not per-watch.
+# Tracked via story_feed to enforce cooldown.
+
+_C5_ALERT_COOLDOWNS: dict[str, int] = {}
+
+
+async def check_c5_alerts() -> int:
+    """Evaluate Cycle 5 conditions and fire Discord alerts."""
+    db = get_db()
+    now = int(time.time())
+    webhook_url = settings.DISCORD_WEBHOOK_URL
+    if not webhook_url:
+        return 0
+
+    fired = 0
+
+    # 1. Feral AI Evolved — tier increased in recent events
+    recent_evolutions = db.execute(
+        """SELECT zone_id, new_tier, timestamp
+           FROM feral_ai_events
+           WHERE event_type = 'evolution' AND timestamp > ?
+           ORDER BY timestamp DESC LIMIT 10""",
+        (now - COOLDOWN_SECONDS,),
+    ).fetchall()
+
+    for evt in recent_evolutions:
+        key = f"feral_evolved_{evt['zone_id']}"
+        if key in _C5_ALERT_COOLDOWNS and (now - _C5_ALERT_COOLDOWNS[key]) < COOLDOWN_SECONDS:
+            continue
+        zone = db.execute(
+            "SELECT name FROM orbital_zones WHERE zone_id = ?",
+            (evt["zone_id"],),
+        ).fetchone()
+        zone_name = zone["name"] if zone else evt["zone_id"][:16]
+        tier = evt["new_tier"]
+
+        if tier >= 3:
+            # Critical tier gets its own alert
+            title = "CRITICAL FERAL AI"
+            body = f"**{zone_name}** reached Tier {tier} — requires immediate response"
+            color = EVE_RED
+        else:
+            title = "FERAL AI EVOLVED"
+            body = f"**{zone_name}** reached Tier {tier}"
+            color = EVE_PURPLE
+
+        await fire_webhook(webhook_url, title, body, color)
+        _C5_ALERT_COOLDOWNS[key] = now
+        fired += 1
+
+    # 2. Hostile Scan — HOSTILE result in recent scans
+    hostile_scans = db.execute(
+        """SELECT scan_id, zone_id, scanner_name, scanned_at
+           FROM scans WHERE result_type = 'HOSTILE' AND scanned_at > ?
+           ORDER BY scanned_at DESC LIMIT 10""",
+        (now - COOLDOWN_SECONDS,),
+    ).fetchall()
+
+    for scan in hostile_scans:
+        key = f"hostile_scan_{scan['zone_id']}"
+        if key in _C5_ALERT_COOLDOWNS and (now - _C5_ALERT_COOLDOWNS[key]) < COOLDOWN_SECONDS:
+            continue
+        zone = db.execute(
+            "SELECT name FROM orbital_zones WHERE zone_id = ?",
+            (scan["zone_id"],),
+        ).fetchone()
+        zone_name = zone["name"] if zone else scan["zone_id"][:16]
+        scanner = scan["scanner_name"] or "unknown"
+
+        await fire_webhook(
+            webhook_url,
+            "HOSTILE DETECTED",
+            f"**{zone_name}** — scan by {scanner}",
+            EVE_RED,
+        )
+        _C5_ALERT_COOLDOWNS[key] = now
+        fired += 1
+
+    # 3. Blind Spot — zones not scanned in >20 min
+    blind_zones = db.execute(
+        """SELECT zone_id, name, last_scanned
+           FROM orbital_zones
+           WHERE last_scanned IS NOT NULL AND last_scanned < ?""",
+        (now - BLIND_SPOT_THRESHOLD,),
+    ).fetchall()
+
+    for zone in blind_zones:
+        key = f"blind_spot_{zone['zone_id']}"
+        if key in _C5_ALERT_COOLDOWNS and (now - _C5_ALERT_COOLDOWNS[key]) < COOLDOWN_SECONDS:
+            continue
+        minutes = (now - zone["last_scanned"]) // 60
+        await fire_webhook(
+            webhook_url,
+            "BLIND SPOT",
+            f"**{zone['name'] or zone['zone_id'][:16]}** unseen for {minutes}m",
+            EVE_YELLOW,
+        )
+        _C5_ALERT_COOLDOWNS[key] = now
+        fired += 1
+
+    # 4. Clone Reserve Low — active clones below threshold per owner
+    low_reserve = db.execute(
+        """SELECT owner_id, owner_name, COUNT(*) as active_count
+           FROM clones WHERE status = 'active'
+           GROUP BY owner_id
+           HAVING active_count < ?""",
+        (CLONE_RESERVE_THRESHOLD,),
+    ).fetchall()
+
+    for owner in low_reserve:
+        key = f"clone_low_{owner['owner_id']}"
+        if key in _C5_ALERT_COOLDOWNS and (now - _C5_ALERT_COOLDOWNS[key]) < COOLDOWN_SECONDS:
+            continue
+        name = owner["owner_name"] or owner["owner_id"][:16]
+        await fire_webhook(
+            webhook_url,
+            "CLONE RESERVE LOW",
+            f"**{name}** — {owner['active_count']} active clones remaining",
+            EVE_ORANGE,
+        )
+        _C5_ALERT_COOLDOWNS[key] = now
+        fired += 1
+
+    if fired > 0:
+        logger.info("C5 Oracle fired %d alerts", fired)
     return fired

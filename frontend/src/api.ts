@@ -252,6 +252,79 @@ export interface EveSSOCallback {
   character_name: string;
 }
 
+// Cycle 5 types
+export interface CycleEnvelope<T> {
+  cycle: number;
+  reset_at: number;
+  data: T;
+}
+
+export interface CycleInfo {
+  number: number;
+  name: string;
+  reset_at: number;
+  days_elapsed: number;
+}
+
+export interface OrbitalZone {
+  zone_id: string;
+  name: string;
+  solar_system_id: string;
+  feral_ai_tier: number;
+  threat_level: string;
+  last_scanned: number | null;
+  stale: boolean;
+}
+
+export interface FeralAiEvent {
+  event_type: string;
+  old_tier: number;
+  new_tier: number;
+  old_threat: string;
+  new_threat: string;
+  severity: string;
+  timestamp: number;
+}
+
+export interface ScanResult {
+  scan_id: string;
+  zone_id: string;
+  scanner_id: string;
+  scanner_name: string;
+  result_type: string;
+  scanned_at: number;
+  zone_hostile_recent?: boolean;
+}
+
+export interface Clone {
+  clone_id: string;
+  owner_id: string;
+  owner_name: string;
+  blueprint_id: string;
+  status: string;
+  location_zone_id: string;
+  manufactured_at: number;
+  blueprint_name?: string;
+  tier?: number;
+  manufacture_time_sec?: number;
+}
+
+export interface CrownEntry {
+  crown_id: string;
+  character_id: string;
+  character_name: string;
+  crown_type: string;
+  attributes: string;
+  equipped_at: number;
+}
+
+export interface CrownRoster {
+  distribution: { crown_type: string; count: number }[];
+  crowned: number;
+  total_characters: number;
+  uncrowned: number;
+}
+
 const EVE_SESSION_KEY = 'witness_eve_session';
 
 function getEveHeaders(): Record<string, string> {
@@ -320,4 +393,35 @@ export const api = {
 
   // SSE status
   sseStatus: () => fetchJson<{ subscribers: number; timestamp: number }>('/events/status'),
+
+  // Cycle 5
+  cycle: () => fetchJson<CycleEnvelope<CycleInfo>>('/cycle'),
+  orbitalZones: (threatLevel?: string) =>
+    fetchJson<CycleEnvelope<OrbitalZone[]>>(
+      `/orbital-zones${threatLevel ? `?threat_level=${threatLevel}` : ''}`
+    ),
+  zoneHistory: (zoneId: string) =>
+    fetchJson<CycleEnvelope<FeralAiEvent[]>>(`/orbital-zones/${zoneId}/history`),
+  scans: (zoneId?: string, resultType?: string) => {
+    const params = new URLSearchParams();
+    if (zoneId) params.set('zone_id', zoneId);
+    if (resultType) params.set('result_type', resultType);
+    const qs = params.toString();
+    return fetchJson<CycleEnvelope<ScanResult[]>>(`/scans${qs ? `?${qs}` : ''}`);
+  },
+  scanFeed: (limit = 20) =>
+    fetchJson<CycleEnvelope<ScanResult[]>>(`/scans/feed?limit=${limit}`),
+  clones: (corpId?: string) =>
+    fetchJson<CycleEnvelope<Clone[]>>(
+      `/clones${corpId ? `?corp_id=${corpId}` : ''}`
+    ),
+  cloneQueue: () => fetchJson<CycleEnvelope<Clone[]>>('/clones/queue'),
+  crowns: (corpId?: string) =>
+    fetchJson<CycleEnvelope<CrownEntry[]>>(
+      `/crowns${corpId ? `?corp_id=${corpId}` : ''}`
+    ),
+  crownRoster: (corpId?: string) =>
+    fetchJson<CycleEnvelope<CrownRoster>>(
+      `/crowns/roster${corpId ? `?corp_id=${corpId}` : ''}`
+    ),
 };

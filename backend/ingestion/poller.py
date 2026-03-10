@@ -333,9 +333,243 @@ def _update_entities(db) -> None:
         logger.error("Entity update error: %s", e)
 
 
+def _ingest_orbital_zones(db, zones: list[dict]) -> int:
+    """Ingest orbital zone data. Detects feral AI tier changes."""
+    count = 0
+    for raw in zones:
+        zone_id = raw.get("id") or raw.get("zoneId")
+        if not zone_id:
+            continue
+
+        new_tier = raw.get("feralAiTier") or raw.get("feral_ai_tier") or 0
+        location = raw.get("location", raw.get("position", {}))
+
+        try:
+            # Check existing tier for evolution detection
+            existing = db.execute(
+                "SELECT feral_ai_tier FROM orbital_zones WHERE zone_id = ?",
+                (str(zone_id),),
+            ).fetchone()
+            old_tier = existing["feral_ai_tier"] if existing else 0
+
+            db.execute(
+                """INSERT INTO orbital_zones
+                   (zone_id, name, solar_system_id, x, y, z,
+                    feral_ai_tier, last_scanned, raw_json)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(zone_id) DO UPDATE SET
+                       name = COALESCE(excluded.name, orbital_zones.name),
+                       feral_ai_tier = excluded.feral_ai_tier,
+                       last_scanned = excluded.last_scanned,
+                       raw_json = excluded.raw_json""",
+                (
+                    str(zone_id),
+                    raw.get("name", ""),
+                    str(raw.get("solarSystemId", "")),
+                    location.get("x"),
+                    location.get("y"),
+                    location.get("z"),
+                    new_tier,
+                    int(time.time()),
+                    json.dumps(raw),
+                ),
+            )
+
+            # Record evolution event if tier changed
+            if existing and new_tier > old_tier:
+                severity = "critical" if new_tier >= 3 else "warning"
+                db.execute(
+                    """INSERT INTO feral_ai_events
+                       (zone_id, event_type, old_tier, new_tier, severity, timestamp)
+                       VALUES (?, 'evolution', ?, ?, ?, ?)""",
+                    (str(zone_id), old_tier, new_tier, severity, int(time.time())),
+                )
+
+            count += 1
+        except Exception as e:
+            logger.error("Zone ingest error: %s", e)
+    return count
+
+
+def _ingest_scans(db, scans: list[dict]) -> int:
+    """Ingest void scan results."""
+    count = 0
+    for raw in scans:
+        scan_id = raw.get("id") or raw.get("scanId")
+        if not scan_id:
+            continue
+
+        timestamp = raw.get("scannedAt") or raw.get("timestamp", 0)
+        if isinstance(timestamp, str):
+            timestamp = _parse_iso_time(timestamp)
+
+        try:
+            db.execute(
+                """INSERT OR IGNORE INTO scans
+                   (scan_id, zone_id, scanner_id, scanner_name,
+                    result_type, result_data, raw_json, scanned_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    str(scan_id),
+                    str(raw.get("zoneId", "")),
+                    str(raw.get("scannerId", "")),
+                    raw.get("scannerName", ""),
+                    raw.get("resultType", "UNKNOWN").upper(),
+                    json.dumps(raw.get("resultData", {})),
+                    json.dumps(raw),
+                    timestamp or int(time.time()),
+                ),
+            )
+
+            # Update zone last_scanned
+            zone_id = raw.get("zoneId")
+            if zone_id:
+                db.execute(
+                    "UPDATE orbital_zones SET last_scanned = ? WHERE zone_id = ?",
+                    (int(time.time()), str(zone_id)),
+                )
+
+            count += 1
+        except Exception as e:
+            logger.error("Scan ingest error: %s", e)
+    return count
+
+
+def _ingest_clones(db, clones: list[dict]) -> int:
+    """Ingest clone manufacturing data."""
+    count = 0
+    for raw in clones:
+        clone_id = raw.get("id") or raw.get("cloneId")
+        if not clone_id:
+            continue
+
+        manufactured_at = raw.get("manufacturedAt") or raw.get("timestamp", 0)
+        if isinstance(manufactured_at, str):
+            manufactured_at = _parse_iso_time(manufactured_at)
+
+        try:
+            db.execute(
+                """INSERT INTO clones
+                   (clone_id, owner_id, owner_name, blueprint_id,
+                    status, location_zone_id, raw_json, manufactured_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(clone_id) DO UPDATE SET
+                       status = excluded.status,
+                       location_zone_id = excluded.location_zone_id,
+                       raw_json = excluded.raw_json""",
+                (
+                    str(clone_id),
+                    str(raw.get("ownerId", "")),
+                    raw.get("ownerName", ""),
+                    str(raw.get("blueprintId", "")),
+                    raw.get("status", "active"),
+                    str(raw.get("locationZoneId", "")),
+                    json.dumps(raw),
+                    manufactured_at or int(time.time()),
+                ),
+            )
+            count += 1
+        except Exception as e:
+            logger.error("Clone ingest error: %s", e)
+    return count
+
+
+def _ingest_crowns(db, crowns: list[dict]) -> int:
+    """Ingest crown/identity data."""
+    count = 0
+    for raw in crowns:
+        crown_id = raw.get("id") or raw.get("crownId")
+        if not crown_id:
+            continue
+
+        equipped_at = raw.get("equippedAt") or raw.get("timestamp", 0)
+        if isinstance(equipped_at, str):
+            equipped_at = _parse_iso_time(equipped_at)
+
+        try:
+            db.execute(
+                """INSERT INTO crowns
+                   (crown_id, character_id, character_name, crown_type,
+                    attributes, chain_tx_id, raw_json, equipped_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(crown_id) DO UPDATE SET
+                       crown_type = excluded.crown_type,
+                       attributes = excluded.attributes,
+                       raw_json = excluded.raw_json""",
+                (
+                    str(crown_id),
+                    str(raw.get("characterId", "")),
+                    raw.get("characterName", ""),
+                    raw.get("crownType", ""),
+                    json.dumps(raw.get("attributes", {})),
+                    raw.get("chainTxId", ""),
+                    json.dumps(raw),
+                    equipped_at or int(time.time()),
+                ),
+            )
+            count += 1
+        except Exception as e:
+            logger.error("Crown ingest error: %s", e)
+    return count
+
+
+async def _poll_c5_endpoints(client: httpx.AsyncClient) -> None:
+    """Poll Cycle 5 endpoints. Gracefully handles 404 (API not yet live)."""
+    # Endpoint names are guesses — will confirm from sandbox after March 11
+    c5_endpoints = {
+        "zones": "v2/orbitalzones",
+        "scans": "v2/scans",
+        "clones": "v2/clones",
+        "crowns": "v2/crowns",
+    }
+
+    tasks = {name: poll_endpoint(client, ep) for name, ep in c5_endpoints.items()}
+    results = {}
+    for name, task in tasks.items():
+        results[name] = await task
+
+    # Skip if all empty (API not live yet)
+    if not any(results.values()):
+        return
+
+    db = get_db()
+    new_zones = _ingest_orbital_zones(db, results.get("zones", []))
+    new_scans = _ingest_scans(db, results.get("scans", []))
+    new_clones = _ingest_clones(db, results.get("clones", []))
+    new_crowns = _ingest_crowns(db, results.get("crowns", []))
+
+    total = new_zones + new_scans + new_clones + new_crowns
+    if total:
+        db.commit()
+        logger.info(
+            "C5 ingested: %d zones, %d scans, %d clones, %d crowns",
+            new_zones,
+            new_scans,
+            new_clones,
+            new_crowns,
+        )
+
+        # SSE notification
+        try:
+            from backend.api.events import event_bus
+
+            event_bus.publish(
+                "c5_update",
+                {
+                    "zones": new_zones,
+                    "scans": new_scans,
+                    "clones": new_clones,
+                    "crowns": new_crowns,
+                },
+            )
+        except Exception:
+            pass
+
+
 async def run_poller() -> None:
     """Main ingestion loop. Runs forever. Never raises."""
     logger.info("Poller starting — base: %s", settings.WORLD_API_BASE)
+    cycle_counter = 0
     async with httpx.AsyncClient() as client:
         while True:
             try:
@@ -384,4 +618,12 @@ async def run_poller() -> None:
             except Exception as e:
                 logger.critical("Poller loop error (continuing): %s", e)
 
+            # Cycle 5 endpoints — poll at reduced frequency (every 3rd cycle)
+            try:
+                if cycle_counter % 3 == 0:
+                    await _poll_c5_endpoints(client)
+            except Exception as e:
+                logger.error("C5 poller error (continuing): %s", e)
+
+            cycle_counter += 1
             await asyncio.sleep(settings.POLL_INTERVAL_SECONDS)
