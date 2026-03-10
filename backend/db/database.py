@@ -308,7 +308,26 @@ CREATE INDEX IF NOT EXISTS idx_crowns_character ON crowns(character_id);
 CREATE INDEX IF NOT EXISTS idx_crowns_type ON crowns(crown_type);
 """
 
+MIGRATIONS = [
+    "ALTER TABLE killmails ADD COLUMN cycle INTEGER DEFAULT 5",
+    "ALTER TABLE gate_events ADD COLUMN cycle INTEGER DEFAULT 5",
+]
+
 _connection: sqlite3.Connection | None = None
+
+
+def _run_migrations(conn: sqlite3.Connection) -> None:
+    """Apply ALTER TABLE migrations for existing databases."""
+    for sql in MIGRATIONS:
+        try:
+            conn.execute(sql)
+            conn.commit()
+            logger.info("Migration applied: %s", sql[:60])
+        except sqlite3.OperationalError as e:
+            if "duplicate column" in str(e).lower():
+                pass  # Already applied
+            else:
+                logger.warning("Migration skipped: %s", e)
 
 
 def get_db() -> sqlite3.Connection:
@@ -319,6 +338,7 @@ def get_db() -> sqlite3.Connection:
         _connection = sqlite3.connect(str(db_path), check_same_thread=False)
         _connection.row_factory = sqlite3.Row
         _connection.executescript(SCHEMA)
+        _run_migrations(_connection)
         logger.info("Database initialized at %s", db_path)
     return _connection
 
