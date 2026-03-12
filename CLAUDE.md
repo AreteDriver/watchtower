@@ -18,16 +18,16 @@ Chain archaeology + AI intelligence platform. Reads the blockchain → entity do
 - **AI**: Anthropic API via httpx (narrative generation)
 - **Bot**: Discord webhooks
 - **Deploy**: Fly.io (backend) + Vercel (frontend)
-- **Tests**: 456 passing, 80%+ coverage (pytest)
+- **Tests**: 476 passing, 80%+ coverage (pytest)
 
 ### Data Flow
 
 ```
-World API (30s poll) → Poller → SQLite → Entity Resolver → Naming Engine
-                                    ↓              ↓              ↓
-                               FastAPI API    AI Narratives   Story Feed
-                                    ↓              ↓              ↓
-                               React SPA     Discord Bot     SSE/Webhooks
+Sui GraphQL (30s poll) → Poller → SQLite → Entity Resolver → Naming Engine
+                                      ↓              ↓              ↓
+                                 FastAPI API    AI Narratives   Story Feed
+                                      ↓              ↓              ↓
+                                 React SPA     Discord Bot     SSE/Webhooks
 ```
 
 ---
@@ -67,20 +67,28 @@ cd frontend && npx vercel --prod              # deploy frontend
 - `blockchain-gateway-stillness.live.tech.evefrontier.com` → NXDOMAIN
 - Static data docs: `https://world-api-stillness.live.tech.evefrontier.com/docs/index.html`
 - **This is NOT a temporary outage.** The poller is hitting a permanently dead endpoint.
-- Current cycle data frozen: 33 entities, 60 killmails, 51 stories
+- World API static data also dead (404 on smartcharacters)
+- **Live data restored via Sui GraphQL**: 1,320+ characters, 18+ killmails, 500+ assemblies (and growing)
 - Previous cycle (archived): 36K entities, 4.7K killmails, 170 titles
 
-### Sui GraphQL Migration — #1 Technical Blocker
+### Sui GraphQL Migration — COMPLETE
 
-WatchTower must migrate from World API polling to Sui GraphQL queries to restore live data. Without this, no path to the +10% Stillness deployment bonus (April 1–15).
+**Migrated March 12, 2026.** Poller now reads from `https://graphql.testnet.sui.io/graphql`.
 
-- [ ] Identify Sui GraphQL endpoint for EVE Frontier world-contract events
-- [ ] Migrate killmail indexer from World API to Sui GraphQL
-- [ ] Migrate entity/gate event indexer
-- [ ] Verify data parity with archived cycle data
-- [ ] Confirm live data flowing before March 31
+- [x] Endpoint: `graphql.testnet.sui.io/graphql`
+- [x] Package: `0x28b497559d65ab320d9da4613bf2498d5946b2c0ae3597ccfda3072ce127448c`
+- [x] Killmail indexer → `KillmailCreatedEvent`
+- [x] Character indexer → `CharacterCreatedEvent` + bulk Character object query (1,320 names)
+- [x] Assembly indexer → `AssemblyCreatedEvent`
+- [x] Gate jump indexer → `JumpEvent` (wired, no events yet this cycle)
+- [x] Character name resolution → `metadata.name` on Character objects
+- [x] Live data confirmed flowing (18+ kills, 500+ assemblies, 1,320 characters)
 
-Do NOT use previous cycle numbers as current. Submit March 31, deploy live April 1–15.
+Key Sui data shapes:
+- Killmail: `key.item_id` → killmail_id, `killer_id.item_id` / `victim_id.item_id`, `solar_system_id.item_id`, `kill_timestamp` (unix str)
+- Character: `character_address` (wallet), `key.item_id` (in-game), `metadata.name`, `tribe_id`
+- Assembly: `assembly_id` (Sui obj), `type_id`, sender = owner
+- Entities match on BOTH `smart_characters.address` and `smart_characters.character_id`
 
 ---
 
