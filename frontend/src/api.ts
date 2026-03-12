@@ -122,6 +122,23 @@ export interface FeedItem {
   timestamp: number;
 }
 
+export interface Dossier {
+  entity_id: string;
+  entity_type: string;
+  display_name: string;
+  first_seen: number;
+  last_seen: number;
+  event_count: number;
+  kill_count: number;
+  death_count: number;
+  gate_count: number;
+  corp_id: string | null;
+  danger_rating: string;
+  titles: string[];
+  tribe_name: string | null;
+  tribe_short: string | null;
+}
+
 export interface SearchResult {
   entity_id: string;
   entity_type: string;
@@ -364,7 +381,7 @@ export interface AnalyticsData {
 export const api = {
   health: () => fetchJson<{ status: string; tables: Record<string, number> }>('/health'),
   search: (q: string) => fetchJson<{ results: SearchResult[] }>(`/search?q=${encodeURIComponent(q)}`),
-  entity: (id: string) => fetchJson<Entity>(`/entity/${id}`),
+  entity: (id: string) => fetchJson<Dossier>(`/entity/${id}`),
   fingerprint: (id: string) => fetchJson<Fingerprint>(`/entity/${id}/fingerprint`),
   feed: (limit = 20) => fetchJson<{ items: FeedItem[] }>(`/feed?limit=${limit}`),
   entities: (type?: string, limit = 20) =>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { api } from '../api';
-import type { Fingerprint } from '../api';
+import type { Fingerprint, Dossier } from '../api';
 import { FingerprintCard } from './FingerprintCard';
 import { ActivityHeatmap } from './ActivityHeatmap';
 import { EntityTimeline } from './EntityTimeline';
@@ -15,6 +15,7 @@ export function EntityPage() {
   const { entityId } = useParams<{ entityId: string }>();
   const navigate = useNavigate();
   const [fingerprint, setFingerprint] = useState<Fingerprint | null>(null);
+  const [dossier, setDossier] = useState<Dossier | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -22,11 +23,18 @@ export function EntityPage() {
     if (!entityId) return;
     setLoading(true);
     setError('');
-    api.fingerprint(entityId)
-      .then(setFingerprint)
+    Promise.all([
+      api.fingerprint(entityId),
+      api.entity(entityId),
+    ])
+      .then(([fp, dos]) => {
+        setFingerprint(fp);
+        setDossier(dos);
+      })
       .catch(() => {
         setError(`Entity not found: ${entityId}`);
         setFingerprint(null);
+        setDossier(null);
       })
       .finally(() => setLoading(false));
   }, [entityId]);
@@ -63,6 +71,9 @@ export function EntityPage() {
 
   if (!fingerprint) return null;
 
+  const displayName = dossier?.display_name || entityId;
+  const titles = dossier?.titles || [];
+
   return (
     <div className="space-y-6">
       {/* Entity header */}
@@ -75,11 +86,25 @@ export function EntityPage() {
             &larr; Back
           </button>
           <h2 className="text-lg font-bold text-[var(--eve-text)]">
-            <span className="text-[var(--eve-green)]">{entityId}</span>
+            <span className="text-[var(--eve-green)]">{displayName}</span>
             <span className="text-[var(--eve-dim)] text-sm ml-2">
               {fingerprint.entity_type} / {fingerprint.event_count} events
             </span>
           </h2>
+
+          {/* Earned titles */}
+          {titles.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mt-1.5">
+              {titles.map((title) => (
+                <span
+                  key={title}
+                  className="font-mono text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-sm bg-[var(--eve-orange)]/15 text-[var(--eve-orange)] border border-[var(--eve-orange)]/30"
+                >
+                  {title}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
         <div className="text-xs text-[var(--eve-dim)]">
           OPSEC: <span className={
@@ -89,6 +114,45 @@ export function EntityPage() {
           }>{fingerprint.opsec_score}/100 ({fingerprint.opsec_rating})</span>
         </div>
       </div>
+
+      {/* Dossier summary card */}
+      {dossier && (
+        <div className="bg-[var(--eve-surface)] border border-[var(--eve-border)] rounded-lg p-4">
+          <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--eve-orange)] font-bold mb-3">
+            Dossier Summary
+          </h3>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div>
+              <div className="font-mono text-[10px] text-[var(--eve-dim)] uppercase">Kills</div>
+              <div className="text-lg font-bold text-[var(--eve-red)]">{dossier.kill_count}</div>
+            </div>
+            <div>
+              <div className="font-mono text-[10px] text-[var(--eve-dim)] uppercase">Deaths</div>
+              <div className="text-lg font-bold text-[var(--eve-text)]">{dossier.death_count}</div>
+            </div>
+            <div>
+              <div className="font-mono text-[10px] text-[var(--eve-dim)] uppercase">Danger</div>
+              <div className={`text-lg font-bold ${
+                dossier.danger_rating === 'deadly' ? 'text-[var(--eve-red)]' :
+                dossier.danger_rating === 'dangerous' ? 'text-[var(--eve-orange)]' :
+                'text-[var(--eve-green)]'
+              }`}>{dossier.danger_rating.toUpperCase()}</div>
+            </div>
+            <div>
+              <div className="font-mono text-[10px] text-[var(--eve-dim)] uppercase">First Seen</div>
+              <div className="text-sm text-[var(--eve-text)]">
+                {new Date(dossier.first_seen * 1000).toLocaleDateString()}
+              </div>
+            </div>
+          </div>
+          {dossier.tribe_name && (
+            <div className="mt-3 text-xs text-[var(--eve-dim)]">
+              Tribe: <span className="text-[var(--eve-text)]">{dossier.tribe_name}</span>
+              {dossier.tribe_short && <span className="ml-1 text-[var(--eve-orange)]">[{dossier.tribe_short}]</span>}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Main content grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
