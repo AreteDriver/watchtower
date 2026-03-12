@@ -928,45 +928,32 @@ async def run_poller() -> None:
             except Exception as e:
                 logger.error("Character name bootstrap error (continuing): %s", e)
 
-            # === Reference data from Sui GraphQL (characters) + World API (tribes) ===
+            # === Reference data from Sui GraphQL (characters) ===
+            # NOTE: World API is dead (NXDOMAIN since March 11, 2026).
+            # Tribes and C5 endpoints removed — no data returns.
             try:
                 if cycle_counter % 10 == 0:
-                    # Characters from Sui GraphQL (incremental events)
                     raw_chars = await sui.poll_characters(client)
-
-                    # Tribes from World API (still serves static/reference data)
-                    raw_tribes = await poll_endpoint(client, "v2/tribes")
-
-                    if raw_chars or raw_tribes:
+                    if raw_chars:
                         ref_db = get_db()
                         new_chars = _ingest_smart_characters(ref_db, raw_chars)
-                        new_tribes = _ingest_tribes(ref_db, raw_tribes)
-
-                        # Fetch tribe details for member→tribe links
-                        if raw_tribes:
-                            detail_tribes = await _fetch_tribe_details(
-                                client, raw_tribes
-                            )
-                            if detail_tribes:
-                                _ingest_tribes(ref_db, detail_tribes)
-
-                        if new_chars or new_tribes:
+                        if new_chars:
                             _enrich_entities_from_characters(ref_db)
                             ref_db.commit()
                             logger.info(
-                                "Reference data: %d chars (Sui), %d tribes (API)",
+                                "Reference data: %d chars from Sui events",
                                 new_chars,
-                                new_tribes,
                             )
             except Exception as e:
                 logger.error("Reference data poll error (continuing): %s", e)
 
-            # Cycle 5 endpoints — poll at reduced frequency (every 3rd cycle)
+            # === Periodic name re-bootstrap (every 100 cycles ~50 min) ===
+            # Catches new players who joined after initial bootstrap
             try:
-                if cycle_counter % 3 == 0:
-                    await _poll_c5_endpoints(client)
-            except Exception as e:
-                logger.error("C5 poller error (continuing): %s", e)
+                if cycle_counter > 0 and cycle_counter % 100 == 0:
+                    sui.names_bootstrapped = False  # Reset to allow re-fetch
+            except Exception:
+                pass
 
             cycle_counter += 1
             await asyncio.sleep(settings.POLL_INTERVAL_SECONDS)

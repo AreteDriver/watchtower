@@ -333,52 +333,64 @@ def _hypothesize_clone_depletion() -> list[Hypothesis]:
 
 
 def _hypothesize_hunting_patterns() -> list[Hypothesis]:
-    """Detect entities with predictable hunting routes."""
+    """Detect attackers with predictable hunting routes."""
     db = get_db()
     now = int(time.time())
     hypotheses = []
 
-    # Top killers in last 12 hours
-    killers = db.execute(
-        """SELECT victim_character_id, COUNT(*) as kills
-           FROM killmails WHERE timestamp > ?
-           GROUP BY victim_character_id
-           HAVING kills >= 3
-           ORDER BY kills DESC LIMIT 5""",
+    # Unpack attacker_character_ids JSON to find top killers in last 12h
+    rows = db.execute(
+        """SELECT attacker_character_ids, solar_system_id
+           FROM killmails WHERE timestamp > ?""",
         (now - 43200,),
     ).fetchall()
 
-    # Check if they operate in limited systems (predictable)
-    for killer in killers:
-        systems = db.execute(
-            """SELECT DISTINCT solar_system_id FROM killmails
-               WHERE victim_character_id = ? AND timestamp > ?""",
-            (killer["victim_character_id"], now - 43200),
-        ).fetchall()
+    # Aggregate kills and systems per attacker
+    attacker_kills: dict[str, int] = {}
+    attacker_systems: dict[str, set[str]] = {}
+    for row in rows:
+        attackers = json.loads(row["attacker_character_ids"] or "[]")
+        system = row["solar_system_id"]
+        for attacker_id in attackers:
+            if not attacker_id:
+                continue
+            attacker_kills[attacker_id] = attacker_kills.get(attacker_id, 0) + 1
+            if attacker_id not in attacker_systems:
+                attacker_systems[attacker_id] = set()
+            attacker_systems[attacker_id].add(system)
 
+    # Filter: 3+ kills in limited systems (predictable hunting)
+    candidates = sorted(
+        ((aid, kills) for aid, kills in attacker_kills.items() if kills >= 3),
+        key=lambda x: x[1],
+        reverse=True,
+    )[:5]
+
+    for attacker_id, kills in candidates:
+        systems = attacker_systems.get(attacker_id, set())
         system_count = len(systems)
         if system_count > 3:
             continue  # Too spread out to be predictable
 
         entity = db.execute(
             "SELECT display_name FROM entities WHERE entity_id = ?",
-            (killer["victim_character_id"],),
+            (attacker_id,),
         ).fetchone()
-        name = entity["display_name"] if entity else killer["victim_character_id"][:16]
+        name = entity["display_name"] if entity else attacker_id[:16]
 
         h = Hypothesis(
             category="INTEL",
-            title=f"Predictable victim pattern: {name}",
+            title=f"Predictable hunting pattern: {name}",
             description=(
-                f"{name} died {killer['kills']} times in {system_count} system(s) "
-                f"over the last 12 hours. Likely a camped route."
+                f"{name} recorded {kills} kills in {system_count} system(s) "
+                f"over the last 12 hours. Likely camping a route."
             ),
-            evidence_count=killer["kills"],
-            evidence_summary=f"{killer['kills']} deaths in {system_count} systems",
-            entity_id=killer["victim_character_id"],
+            evidence_count=kills,
+            evidence_summary=f"{kills} kills in {system_count} systems",
+            entity_id=attacker_id,
         )
 
-        evidence = min(1.0, killer["kills"] / 5)
+        evidence = min(1.0, kills / 5)
         recency = 0.8
         impact = 0.4
         novelty = 0.6 if system_count == 1 else 0.3

@@ -343,38 +343,40 @@ class TestHuntingPatterns:
             result = _hypothesize_hunting_patterns()
         assert result == []
 
-    def test_concentrated_deaths_detected(self):
+    def test_concentrated_kills_detected(self):
         db = _get_test_db()
         now = int(time.time())
-        # Same victim, 4 deaths in 1 system
+        # Same attacker, 4 kills in 1 system
         for i in range(4):
             db.execute(
                 "INSERT INTO killmails "
-                "(killmail_id, victim_character_id, solar_system_id, timestamp) "
-                "VALUES (?, 'victim1', 'sys1', ?)",
-                (f"k{i}", now - i * 600),
+                "(killmail_id, victim_character_id, attacker_character_ids, "
+                "solar_system_id, timestamp) "
+                "VALUES (?, ?, ?, 'sys1', ?)",
+                (f"k{i}", f"victim{i}", '["hunter1"]', now - i * 600),
             )
         db.execute(
             "INSERT INTO entities (entity_id, entity_type, display_name) "
-            "VALUES ('victim1', 'character', 'CampedPilot')",
+            "VALUES ('hunter1', 'character', 'GateCamper')",
         )
         db.commit()
         with patch("backend.warden.warden.get_db", return_value=db):
             result = _hypothesize_hunting_patterns()
         assert len(result) == 1
         assert result[0].category == "INTEL"
-        assert "CampedPilot" in result[0].title
+        assert "GateCamper" in result[0].title
 
-    def test_spread_deaths_ignored(self):
+    def test_spread_kills_ignored(self):
         db = _get_test_db()
         now = int(time.time())
-        # Same victim, 4 deaths across 4 systems
+        # Same attacker, 4 kills across 4 systems (too spread out)
         for i in range(4):
             db.execute(
                 "INSERT INTO killmails "
-                "(killmail_id, victim_character_id, solar_system_id, timestamp) "
-                "VALUES (?, 'victim1', ?, ?)",
-                (f"k{i}", f"sys{i}", now - i * 600),
+                "(killmail_id, victim_character_id, attacker_character_ids, "
+                "solar_system_id, timestamp) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (f"k{i}", f"victim{i}", '["hunter1"]', f"sys{i}", now - i * 600),
             )
         db.commit()
         with patch("backend.warden.warden.get_db", return_value=db):

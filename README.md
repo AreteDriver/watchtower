@@ -5,24 +5,24 @@
 >
 > *WatchTower doesn't just watch — it remembers, and the chain listens.*
 
-**[Live Demo](https://watchtower-evefrontier.fly.dev)** | [API Docs](#api-endpoints) | [Discord Bot](#discord-bot) | [Assembly Guide](docs/ASSEMBLY_GUIDE.md)
+**[Live Demo](https://watchtower-evefrontier.vercel.app/)** | [API Docs](#api-endpoints) | [Discord Bot](#discord-bot) | [Assembly Guide](docs/ASSEMBLY_GUIDE.md)
+
+---
+
+## Current Cycle Status
+
+WatchTower's indexer migrated from World API to **Sui GraphQL** on March 12, 2026 — CCP's confirmed architecture direction for all dynamic data. Live data is actively accumulating.
+
+- **Current cycle (Sui GraphQL):** 1,320+ characters · 18+ killmails · 500+ assemblies — and growing
+- **Previous cycle (Stillness):** 36,085 entities fingerprinted · 4,795 killmails analyzed · 170 earned titles generated
 
 ---
 
 ## What is WatchTower?
 
-WatchTower reads the EVE Frontier blockchain like a history book. It watches the World API, ingests every on-chain event, resolves entities, and generates intelligence — from deterministic earned titles to AI-written dossiers to on-chain reputation scores that gate Smart Assembly access.
+WatchTower turns raw on-chain behavior into identity. Every entity that acts on the frontier leaves a trace. WatchTower finds the patterns in those traces and builds intelligence from them — who is this pilot, where do they operate, what have they earned, what is their reputation worth. No manual tagging. No self-reported data. The chain doesn't lie.
 
 The chain never forgets. Neither does WatchTower.
-
-### Live Data (as of launch)
-- **4,795 killmails** ingested and analyzed
-- **35,278 smart assemblies** (gates, turrets, storage, manufacturing)
-- **36,085 entities** tracked with behavioral fingerprints
-- **190 killers** with confirmed kill counts (Asterix #1: 484 kills)
-- **170 earned titles** computed from on-chain stats
-- **224 story feed items** auto-generated from event patterns
-- **457 tests** passing (80%+ coverage), all lint clean
 
 ---
 
@@ -43,7 +43,7 @@ The chain never forgets. Neither does WatchTower.
 - **Streak Tracker** — Kill streak tracking, momentum status (hot/active/cooling/dormant), active hunter board
 - **Corp Intel** — Corporation combat rankings, member aggregation, inter-corp rivalry detection
 
-### Reputation System (NEW)
+### Reputation System
 - **On-Chain Trust Scoring** — Every entity scored 0-100 across 6 dimensions:
   - **Combat Honor** — Clean kills vs ganking behavior
   - **Target Diversity** — Range of opponents (not farming the same pilot)
@@ -55,7 +55,6 @@ The chain never forgets. Neither does WatchTower.
 - **Designed for Smart Contracts** — Scores structured for direct consumption by WatcherSystem.sol
 
 ### Real-Time Intelligence
-
 - **Server-Sent Events** — Live push feed for kills, alerts, and system status
 - **Live Ticker** — Dashboard shows real-time events as they happen (kills, alerts, status)
 - **EVE SSO Login** — Verify character identity via CCP's OAuth2, cross-reference with on-chain data
@@ -76,32 +75,38 @@ The chain never forgets. Neither does WatchTower.
 ## Architecture
 
 ```
-World API (30s polling) → Poller → SQLite WAL
-                                       ↓
-            ┌──────────┬───────────────┼───────────┬──────────┐
-            ↓          ↓               ↓           ↓          ↓
-      Entity      Naming         Story Feed   Kill Graph  Hotzones
-      Resolver    Engine         + Streaks    + Vendettas  + Corps
-            ↓          ↓               ↓           ↓          ↓
-      Fingerprint  Earned            Auto-      Network    Danger
-       Builder     Titles            News      Analysis    Zones
-            ↓          ↓               ↓           ↓          ↓
-            └──────────┴───────────┬───┼───────────┴──────────┘
-                                   ↓   ↓
-                             Reputation Engine
-                            (6-dimension scoring)
-                                   ↓
-                              FastAPI API (28 endpoints)
-                                   ↓
-                         ┌─────────┼──────────┬──────────────┐
-                         ↓         ↓          ↓              ↓
-                    React SPA   Discord    Webhooks    WatcherSystem.sol
-                    (4 tabs,      Bot                  (MUD v2 contract)
-                   12 components)                            ↓
-                                                   Smart Assembly gating
-                                                  ("deny dock if trust < 40")
-                                                             ↓
-                                                    ← back on-chain →
+Sui GraphQL API (30s polling)
+        ↓
+   Indexer (Python/FastAPI)
+   — KillmailCreatedEvent, CharacterCreatedEvent, AssemblyCreatedEvent, JumpEvent
+   — normalizes and stores raw event data
+        ↓
+   SQLite WAL
+        ↓
+   ┌──────────┬───────────────┬───────────┬──────────┐
+   ↓          ↓               ↓           ↓          ↓
+ Entity    Naming        Story Feed   Kill Graph  Hotzones
+ Resolver  Engine        + Streaks    + Vendettas  + Corps
+   ↓          ↓               ↓           ↓          ↓
+ Fingerprint  Earned        Auto-      Network    Danger
+  Builder     Titles        News      Analysis    Zones
+   ↓          ↓               ↓           ↓          ↓
+   └──────────┴───────────┬───┼───────────┴──────────┘
+                          ↓   ↓
+                    Reputation Engine
+                   (6-dimension scoring)
+                          ↓
+                     FastAPI API (33 endpoints)
+                          ↓
+                ┌─────────┼──────────┬──────────────┐
+                ↓         ↓          ↓              ↓
+           React SPA   Discord    Webhooks    WatcherSystem.sol
+           (5 tabs,      Bot                  (MUD v2 contract)
+          20 components)                            ↓
+                                          Smart Assembly gating
+                                         ("deny dock if trust < 40")
+                                                    ↓
+                                           ← back on-chain →
 ```
 
 **The loop**: Data flows in from the chain → WatchTower analyzes and scores → reputation scores flow back on-chain via WatcherSystem.sol → Smart Assemblies enforce access based on trust → player behavior changes → new chain data flows in.
@@ -112,22 +117,25 @@ World API (30s polling) → Poller → SQLite WAL
 
 Three subscription tiers, paid via Smart Assembly inventory transfer (in-game items):
 
-| Tier | Duration | Includes |
-|---|---|---|
-| **Scout** | 7 days | Behavioral fingerprints, reputation scores |
-| **Oracle** | 7 days | + AI narratives, standing watches, locator agent |
-| **Spymaster** | 7 days | + Alt detection, kill networks, battle reports |
+- **Scout** (7 days) — Behavioral fingerprints, reputation scores
+- **Oracle** (7 days) — + AI narratives, standing watches, locator agent
+- **Spymaster** (7 days) — + Alt detection, kill networks, battle reports
 
 Subscription status is verified on-chain. The backend checks wallet subscription state with a 5-minute cache and gates endpoint access by tier.
 
+### Data Sources
+- **Dynamic data** (killmails, gate events, entity activity) — Sui GraphQL API (`graphql.testnet.sui.io`)
+- **Static data** (typeIDs, system names) — World API (stillness)
+
 ### Tech Stack
-- **Backend**: Python 3.12, FastAPI, SQLite WAL
-- **Frontend**: React 19, Vite 7, Tailwind CSS 4, TypeScript (5 tabs, 20 components)
+- **Backend**: Python 3.12, FastAPI, SQLite WAL, Pydantic v2
+- **Frontend**: React 19, Vite, Tailwind CSS v4, TypeScript strict
 - **Intelligence**: Anthropic API (Claude) for narrative generation
-- **On-Chain**: MUD v2, Solidity (WatcherSystem.sol)
-- **Bot**: discord.py with slash commands
-- **Deployment**: Docker, Fly.io
-- **Ingestion**: Never-crash poller with pagination, error isolation
+- **On-Chain**: MUD v2, Solidity (WatcherSystem.sol), Sui Move (reputation oracle)
+- **Bot**: Discord webhooks
+- **Deployment**: Fly.io (backend), Vercel (frontend), Docker
+- **Ingestion**: Never-crash poller with Sui GraphQL event subscription, error isolation
+- **Tests**: 476 passing, 80%+ coverage
 
 ### Design Principles
 1. **The poller must never crash** — all errors logged, never raised
@@ -155,6 +163,11 @@ python -m scripts.backfill
 
 # Run
 uvicorn backend.api.app:app --host 0.0.0.0 --port 8000
+
+# Frontend (separate terminal)
+cd frontend
+npm install
+npm run dev
 ```
 
 ### Docker
@@ -170,41 +183,50 @@ docker compose up -d
 
 All endpoints under `/api/` prefix. 33 endpoints total.
 
-| Endpoint | Method | Description |
-|---|---|---|
-| `/api/health` | GET | Service health + table counts |
-| `/api/entities` | GET | List entities (filter, sort, paginate) |
-| `/api/entity/{id}` | GET | Full entity dossier |
-| `/api/entity/{id}/fingerprint` | GET | Behavioral fingerprint (temporal, route, social, threat, OPSEC) |
-| `/api/entity/{id}/timeline` | GET | Unified event timeline with delta analysis |
-| `/api/entity/{id}/narrative` | GET | AI-generated or template dossier narrative |
-| `/api/entity/{id}/reputation` | GET | Trust score (0-100) with 6-dimension breakdown |
-| `/api/feed` | GET | Story feed (auto-generated news) |
-| `/api/leaderboard/{category}` | GET | Rankings: `top_killers`, `most_deaths`, `most_traveled`, `deadliest_gates`, `most_active_gates` |
-| `/api/titles` | GET | Entities with earned titles |
-| `/api/search?q=` | GET | Search entities by name or address |
-| `/api/fingerprint/compare` | GET | Compare two entity fingerprints (alt detection) |
-| `/api/kill-graph` | GET | Kill network (who kills whom, vendettas) |
-| `/api/hotzones` | GET | Dangerous systems ranked by kill density |
-| `/api/hotzones/{system_id}` | GET | System detail (hourly distribution, top victims) |
-| `/api/entity/{id}/streak` | GET | Kill streak and momentum data |
-| `/api/streaks` | GET | Active hunters on kill streaks |
-| `/api/corps` | GET | Corporation combat leaderboard |
-| `/api/corps/rivalries` | GET | Inter-corporation rivalries |
-| `/api/corp/{id}` | GET | Corporation profile (members, kills, systems) |
-| `/api/battle-report` | POST | AI battle analysis from event sequence |
-| `/api/watches` | POST | Create standing intelligence watch |
-| `/api/watches/{id}` | DELETE | Remove watch |
-| `/api/subscription/{wallet}` | GET | Check on-chain subscription status and tier |
-| `/api/subscribe` | POST | Initiate subscription (triggers on-chain verification) |
-| `/api/assemblies` | GET | Watcher Assembly Network summary (coverage, fleet health) |
-| `/api/assemblies/list` | GET | List deployed Watcher assemblies with online/offline status |
-| `/api/auth/eve/login` | GET | EVE SSO authorization URL |
-| `/api/auth/eve/callback` | GET | OAuth2 callback — exchange code for session |
-| `/api/auth/eve/me` | GET | Current EVE character info (with on-chain cross-ref) |
-| `/api/auth/eve/logout` | POST | Clear EVE SSO session |
-| `/api/events` | GET | SSE stream (kills, alerts, status) |
-| `/api/events/status` | GET | SSE connection status |
+**Entities**
+- `GET /api/entities` — List entities (filter, sort, paginate)
+- `GET /api/entity/{id}` — Full entity dossier
+- `GET /api/entity/{id}/fingerprint` — Behavioral fingerprint (temporal, route, social, threat, OPSEC)
+- `GET /api/entity/{id}/timeline` — Unified event timeline with delta analysis
+- `GET /api/entity/{id}/narrative` — AI-generated or template dossier narrative
+- `GET /api/entity/{id}/reputation` — Trust score (0-100) with 6-dimension breakdown
+- `GET /api/entity/{id}/streak` — Kill streak and momentum data
+- `GET /api/search?q=` — Search entities by name or address
+
+**Intelligence**
+- `GET /api/feed` — Story feed (auto-generated news)
+- `GET /api/leaderboard/{category}` — Rankings: top_killers, most_deaths, most_traveled, deadliest_gates
+- `GET /api/titles` — Entities with earned titles
+- `GET /api/fingerprint/compare` — Compare two entity fingerprints (alt detection)
+- `GET /api/kill-graph` — Kill network (who kills whom, vendettas)
+- `POST /api/battle-report` — AI battle analysis from event sequence
+
+**Tactical**
+- `GET /api/hotzones` — Dangerous systems ranked by kill density
+- `GET /api/hotzones/{system_id}` — System detail (hourly distribution, top victims)
+- `GET /api/streaks` — Active hunters on kill streaks
+- `GET /api/corps` — Corporation combat leaderboard
+- `GET /api/corps/rivalries` — Inter-corporation rivalries
+- `GET /api/corp/{id}` — Corporation profile (members, kills, systems)
+
+**Economy & Assemblies**
+- `GET /api/subscription/{wallet}` — Check on-chain subscription status and tier
+- `POST /api/subscribe` — Initiate subscription (triggers on-chain verification)
+- `GET /api/assemblies` — Watcher Assembly Network summary (coverage, fleet health)
+- `GET /api/assemblies/list` — List deployed Watcher assemblies with online/offline status
+
+**Auth & Real-Time**
+- `GET /api/auth/eve/login` — EVE SSO authorization URL
+- `GET /api/auth/eve/callback` — OAuth2 callback — exchange code for session
+- `GET /api/auth/eve/me` — Current EVE character info (with on-chain cross-ref)
+- `POST /api/auth/eve/logout` — Clear EVE SSO session
+- `GET /api/events` — SSE stream (kills, alerts, status)
+- `GET /api/events/status` — SSE connection status
+
+**System**
+- `GET /api/health` — Service health + table counts
+- `POST /api/watches` — Create standing intelligence watch
+- `DELETE /api/watches/{id}` — Remove watch
 
 ---
 
@@ -212,19 +234,17 @@ All endpoints under `/api/` prefix. 33 endpoints total.
 
 10 slash commands for in-game intelligence:
 
-| Command | Description |
-|---|---|
-| `/watchtower <name>` | Entity lookup — stats, titles, threat level, OPSEC rating |
-| `/killfeed [count]` | Latest killmails with timestamps |
-| `/leaderboard <category>` | Top killers, most deaths, most traveled |
-| `/feed` | Recent story feed items |
-| `/compare <entity1> <entity2>` | Fingerprint comparison — alt detection |
-| `/locate <id>` | Full entity lookup with danger rating |
-| `/history <id>` | AI-generated narrative dossier |
-| `/profile <id>` | Full behavioral fingerprint |
-| `/opsec <id>` | OPSEC score analysis |
-| `/watch <type> <target>` | Set a standing intelligence watch |
-| `/unwatch <target>` | Remove a standing watch |
+- `/watchtower <name>` — Entity lookup — stats, titles, threat level, OPSEC rating
+- `/killfeed [count]` — Latest killmails with timestamps
+- `/leaderboard <category>` — Top killers, most deaths, most traveled
+- `/feed` — Recent story feed items
+- `/compare <entity1> <entity2>` — Fingerprint comparison — alt detection
+- `/locate <id>` — Full entity lookup with danger rating
+- `/history <id>` — AI-generated narrative dossier
+- `/profile <id>` — Full behavioral fingerprint
+- `/opsec <id>` — OPSEC score analysis
+- `/watch <type> <target>` — Set a standing intelligence watch
+- `/unwatch <target>` — Remove a standing watch
 
 Set `WATCHTOWER_DISCORD_TOKEN` to activate.
 
@@ -248,35 +268,31 @@ Live SSE ticker shows real-time kills, alerts, and system updates as they happen
 
 Deterministic titles computed from on-chain stats. Same data = same title for everyone.
 
-### Character Titles
-| Title | Criteria |
-|---|---|
-| The Reaper | 50+ kills |
-| The Hunter | 20+ kills |
-| The Pathfinder | 50+ gate transits |
-| The Wanderer | 20+ gate transits |
-| The Marked | 10+ deaths |
-| The Survivor | 0 deaths, 50+ events |
-| The Ghost | 30+ transits, 0 kills, 0 deaths |
+**Character Titles**
+- **The Reaper** — 50+ kills
+- **The Hunter** — 20+ kills
+- **The Pathfinder** — 50+ gate transits
+- **The Wanderer** — 20+ gate transits
+- **The Marked** — 10+ deaths
+- **The Survivor** — 0 deaths, 50+ events
+- **The Ghost** — 30+ transits, 0 kills, 0 deaths
 
-### Gate Titles
-| Title | Criteria |
-|---|---|
-| The Meatgrinder | 20+ nearby killmails |
-| The Bloodgate | 10+ nearby killmails |
-| The Highway | 1000+ transits |
-| The Vault Gate | 50+ transits, 0 nearby kills |
-| The Crossroads | 100+ unique pilots |
+**Gate Titles**
+- **The Meatgrinder** — 20+ nearby killmails
+- **The Bloodgate** — 10+ nearby killmails
+- **The Highway** — 1000+ transits
+- **The Vault Gate** — 50+ transits, 0 nearby kills
+- **The Crossroads** — 100+ unique pilots
 
 ---
 
 ## Development
 
 ```bash
-# Backend tests (398 passing, 80%+ coverage)
+# Backend tests (476 passing, 80%+ coverage)
 pytest tests/ -v
 
-# Frontend tests (45 passing)
+# Frontend tests
 cd frontend && npx vitest run
 
 # Lint
@@ -293,23 +309,20 @@ python scripts/seed_demo.py
 
 ## Configuration
 
-| Variable | Default | Description |
-|---|---|---|
-| `WATCHTOWER_WORLD_API_BASE` | blockchain-gateway-stillness... | World API endpoint |
-| `WATCHTOWER_POLL_INTERVAL_SECONDS` | 30 | Polling interval |
-| `WATCHTOWER_DB_PATH` | data/watchtower.db | SQLite database path |
-| `WATCHTOWER_ANTHROPIC_API_KEY` | (empty) | Enables AI narratives (template fallback without) |
-| `WATCHTOWER_DISCORD_TOKEN` | (empty) | Enables Discord bot |
-| `WATCHTOWER_DISCORD_WEBHOOK_URL` | (empty) | Alert delivery webhook |
-| `WATCHTOWER_EVE_SSO_CLIENT_ID` | (empty) | CCP EVE SSO application client ID |
-| `WATCHTOWER_EVE_SSO_SECRET_KEY` | (empty) | CCP EVE SSO application secret |
-| `WATCHTOWER_EVE_SSO_CALLBACK_URL` | (empty) | OAuth2 callback URL |
+- `WATCHTOWER_POLL_INTERVAL_SECONDS` — Polling interval (default: 30)
+- `WATCHTOWER_DB_PATH` — SQLite database path (default: `data/watchtower.db`)
+- `WATCHTOWER_ANTHROPIC_API_KEY` — Enables AI narratives (template fallback without)
+- `WATCHTOWER_DISCORD_TOKEN` — Enables Discord bot
+- `WATCHTOWER_DISCORD_WEBHOOK_URL` — Alert delivery webhook
+- `WATCHTOWER_EVE_SSO_CLIENT_ID` — CCP EVE SSO application client ID
+- `WATCHTOWER_EVE_SSO_SECRET_KEY` — CCP EVE SSO application secret
+- `WATCHTOWER_EVE_SSO_CALLBACK_URL` — OAuth2 callback URL
 
 ---
 
 ## Hackathon
 
-Built for the **EVE Frontier Hackathon** (March 2026).
+Built for the **EVE Frontier × Sui Hackathon** (March 2026).
 
 **Category**: Community Tools / Intelligence
 
