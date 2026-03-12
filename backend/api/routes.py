@@ -23,7 +23,7 @@ from backend.analysis.reputation import compute_reputation
 from backend.analysis.streaks import compute_streaks, get_hot_streaks
 from backend.analysis.subscriptions import check_subscription, record_subscription
 from backend.api.rate_limit import limiter
-from backend.api.tier_gate import check_tier_access
+from backend.api.tier_gate import check_tier_access, is_admin_wallet
 from backend.core.logger import get_logger
 from backend.db.database import get_db
 
@@ -421,6 +421,98 @@ async def subscribe(request: Request, req: SubscribeRequest):
     if req.tier < 1 or req.tier > 3:
         raise HTTPException(400, "Tier must be 1 (Scout), 2 (Oracle), or 3 (Spymaster)")
     return record_subscription(db, req.wallet_address, req.tier, req.duration)
+
+
+@router.get("/admin/analytics")
+@limiter.limit("30/minute")
+async def get_admin_analytics(request: Request):
+    """Private analytics dashboard — admin only."""
+    wallet = request.headers.get("X-Wallet-Address", "")
+    if not wallet or not is_admin_wallet(wallet):
+        raise HTTPException(403, "Admin access required.")
+
+    db = get_db()
+    now = int(time.time())
+    day_ago = now - 86400
+    week_ago = now - 7 * 86400
+
+    # Core counts
+    entity_count = db.execute("SELECT COUNT(*) as cnt FROM entities").fetchone()["cnt"]
+    char_count = db.execute(
+        "SELECT COUNT(*) as cnt FROM entities WHERE entity_type = 'character'"
+    ).fetchone()["cnt"]
+    gate_count = db.execute(
+        "SELECT COUNT(*) as cnt FROM entities WHERE entity_type = 'gate'"
+    ).fetchone()["cnt"]
+    killmail_count = db.execute("SELECT COUNT(*) as cnt FROM killmails").fetchone()["cnt"]
+    gate_event_count = db.execute("SELECT COUNT(*) as cnt FROM gate_events").fetchone()["cnt"]
+    title_count = db.execute("SELECT COUNT(*) as cnt FROM entity_titles").fetchone()["cnt"]
+    story_count = db.execute("SELECT COUNT(*) as cnt FROM story_feed").fetchone()["cnt"]
+    watch_count = db.execute(
+        "SELECT COUNT(*) as cnt FROM watches WHERE active = 1"
+    ).fetchone()["cnt"]
+
+    # Activity (24h / 7d)
+    kills_24h = db.execute(
+        "SELECT COUNT(*) as cnt FROM killmails WHERE timestamp > ?", (day_ago,)
+    ).fetchone()["cnt"]
+    kills_7d = db.execute(
+        "SELECT COUNT(*) as cnt FROM killmails WHERE timestamp > ?", (week_ago,)
+    ).fetchone()["cnt"]
+    gates_24h = db.execute(
+        "SELECT COUNT(*) as cnt FROM gate_events WHERE timestamp > ?", (day_ago,)
+    ).fetchone()["cnt"]
+    gates_7d = db.execute(
+        "SELECT COUNT(*) as cnt FROM gate_events WHERE timestamp > ?", (week_ago,)
+    ).fetchone()["cnt"]
+
+    # Subscription distribution
+    tier_rows = db.execute(
+        """SELECT tier, COUNT(*) as cnt FROM watcher_subscriptions
+           WHERE expires_at > ? GROUP BY tier""",
+        (now,),
+    ).fetchall()
+    tier_dist = {r["tier"]: r["cnt"] for r in tier_rows}
+
+    # Top entities by activity (last 7d)
+    top_active = db.execute(
+        """SELECT entity_id, display_name, kill_count, death_count, event_count
+           FROM entities WHERE last_seen > ?
+           ORDER BY event_count DESC LIMIT 10""",
+        (week_ago,),
+    ).fetchall()
+
+    # New entities (last 24h)
+    new_entities_24h = db.execute(
+        "SELECT COUNT(*) as cnt FROM entities WHERE first_seen > ?", (day_ago,)
+    ).fetchone()["cnt"]
+
+    return {
+        "timestamp": now,
+        "totals": {
+            "entities": entity_count,
+            "characters": char_count,
+            "gates": gate_count,
+            "killmails": killmail_count,
+            "gate_events": gate_event_count,
+            "titles": title_count,
+            "stories": story_count,
+            "active_watches": watch_count,
+        },
+        "activity": {
+            "kills_24h": kills_24h,
+            "kills_7d": kills_7d,
+            "gate_transits_24h": gates_24h,
+            "gate_transits_7d": gates_7d,
+            "new_entities_24h": new_entities_24h,
+        },
+        "subscriptions": {
+            "scout": tier_dist.get(1, 0),
+            "oracle": tier_dist.get(2, 0),
+            "spymaster": tier_dist.get(3, 0),
+        },
+        "top_active_7d": [dict(r) for r in top_active],
+    }
 
 
 class BattleReportRequest(BaseModel):

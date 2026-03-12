@@ -333,6 +333,33 @@ export interface CrownRoster {
   uncrowned: number;
 }
 
+export interface AnalyticsData {
+  timestamp: number;
+  totals: {
+    entities: number;
+    characters: number;
+    gates: number;
+    killmails: number;
+    gate_events: number;
+    titles: number;
+    stories: number;
+    active_watches: number;
+  };
+  activity: {
+    kills_24h: number;
+    kills_7d: number;
+    gate_transits_24h: number;
+    gate_transits_7d: number;
+    new_entities_24h: number;
+  };
+  subscriptions: {
+    scout: number;
+    oracle: number;
+    spymaster: number;
+  };
+  top_active_7d: { entity_id: string; display_name: string; kill_count: number; death_count: number; event_count: number }[];
+}
+
 export const api = {
   health: () => fetchJson<{ status: string; tables: Record<string, number> }>('/health'),
   search: (q: string) => fetchJson<{ results: SearchResult[] }>(`/search?q=${encodeURIComponent(q)}`),
@@ -387,6 +414,9 @@ export const api = {
     fetchJson<WalletMeResponse>('/auth/wallet/me'),
   walletDisconnect: () =>
     postJson<{ status: string }>('/auth/wallet/disconnect', {}),
+
+  // Admin analytics
+  analytics: () => fetchJson<AnalyticsData>('/admin/analytics'),
 
   // SSE status
   sseStatus: () => fetchJson<{ subscribers: number; timestamp: number }>('/events/status'),

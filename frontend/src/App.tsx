@@ -28,9 +28,10 @@ import { OrbitalZones } from './components/OrbitalZones';
 import { VoidScanFeed } from './components/VoidScanFeed';
 import { CloneStatus } from './components/CloneStatus';
 import { CrownRoster } from './components/CrownRoster';
+import { AdminAnalytics } from './components/AdminAnalytics';
 import { useAuth } from './contexts/AuthContext';
 
-type Tab = 'intel' | 'tactical' | 'c5' | 'compare' | 'feed' | 'account';
+type Tab = 'intel' | 'tactical' | 'c5' | 'compare' | 'feed' | 'account' | 'admin';
 
 function tabFromPath(path: string): Tab {
   if (path.startsWith('/tactical')) return 'tactical';
@@ -38,6 +39,7 @@ function tabFromPath(path: string): Tab {
   if (path.startsWith('/compare')) return 'compare';
   if (path.startsWith('/feed')) return 'feed';
   if (path.startsWith('/account')) return 'account';
+  if (path.startsWith('/admin')) return 'admin';
   return 'intel';
 }
 
@@ -48,7 +50,7 @@ function Dashboard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [selectedEntity, setSelectedEntity] = useState('');
-  const { wallet } = useAuth();
+  const { wallet, isAdmin } = useAuth();
   const [liveEvents, setLiveEvents] = useState<Array<{type: string, text: string, ts: number}>>([]);
 
   const { connected } = useEventStream({
@@ -91,6 +93,7 @@ function Dashboard() {
       compare: '/compare',
       feed: '/feed',
       account: '/account',
+      admin: '/admin',
     };
     navigate(paths[tab]);
   };
@@ -102,6 +105,7 @@ function Dashboard() {
     { key: 'compare', label: 'Compare' },
     { key: 'feed', label: 'Feed & Rankings' },
     { key: 'account', label: wallet ? 'Account' : 'Connect' },
+    ...(isAdmin ? [{ key: 'admin' as Tab, label: 'Admin' }] : []),
   ];
 
   return (
@@ -282,6 +286,12 @@ function Dashboard() {
       {activeTab === 'account' && (
         <ErrorBoundary>
           <AccountPage />
+        </ErrorBoundary>
+      )}
+
+      {activeTab === 'admin' && isAdmin && (
+        <ErrorBoundary>
+          <AdminAnalytics />
         </ErrorBoundary>
       )}
     </>
