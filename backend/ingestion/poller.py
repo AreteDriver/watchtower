@@ -1,4 +1,8 @@
-"""World API poller — the sensory system. NEVER LET THIS CRASH."""
+"""World API poller — the sensory system. NEVER LET THIS CRASH.
+
+Data source: Sui GraphQL (primary) with World API fallback for static data.
+CCP migrated all dynamic data to Sui on March 11, 2026.
+"""
 
 import asyncio
 import json
@@ -10,6 +14,7 @@ import httpx
 from backend.core.config import settings
 from backend.core.logger import get_logger
 from backend.db.database import get_db
+from backend.ingestion.sui_graphql import SuiGraphQLPoller
 
 logger = get_logger("poller")
 
@@ -816,8 +821,15 @@ def _archive_pre_cycle_data(db) -> None:
 
 
 async def run_poller() -> None:
-    """Main ingestion loop. Runs forever. Never raises."""
-    logger.info("Poller starting — base: %s", settings.WORLD_API_BASE)
+    """Main ingestion loop. Runs forever. Never raises.
+
+    Primary data source: Sui GraphQL (killmails, characters, assemblies, gate jumps).
+    Fallback: World API for static/reference data (tribes, C5 endpoints).
+    """
+    logger.info(
+        "Poller starting — Sui GraphQL primary, World API fallback for static data"
+    )
+    sui = SuiGraphQLPoller()
     cycle_counter = 0
     reset_checked = False
     async with httpx.AsyncClient() as client:
@@ -832,24 +844,29 @@ async def run_poller() -> None:
                     logger.error("Reset check failed (continuing): %s", e)
                 reset_checked = True
 
+            # === Primary: Sui GraphQL for dynamic data ===
             try:
-                # Poll all endpoints in parallel
-                kill_task = poll_endpoint(client, "v2/killmails")
-                assembly_task = poll_endpoint(client, "v2/smartassemblies")
-                raw_kills, raw_assemblies = await asyncio.gather(kill_task, assembly_task)
+                kill_task = sui.poll_killmails(client)
+                assembly_task = sui.poll_assemblies(client)
+                jump_task = sui.poll_gate_jumps(client)
+                raw_kills, raw_assemblies, raw_jumps = await asyncio.gather(
+                    kill_task, assembly_task, jump_task
+                )
 
                 db = get_db()
                 new_kills = _ingest_killmails(db, raw_kills)
                 new_assemblies = _ingest_smart_assemblies(db, raw_assemblies)
+                new_jumps = _ingest_gate_events(db, raw_jumps)
                 new_subs = _ingest_subscriptions(db, raw_assemblies)
 
-                if new_kills or new_assemblies:
+                if new_kills or new_assemblies or new_jumps:
                     _update_entities(db)
                     db.commit()
                     logger.info(
-                        "Ingested: %d killmails, %d assemblies, %d subs",
+                        "Sui ingested: %d kills, %d assemblies, %d jumps, %d subs",
                         new_kills,
                         new_assemblies,
+                        new_jumps,
                         new_subs,
                     )
                     # Publish to SSE event bus
@@ -859,16 +876,12 @@ async def run_poller() -> None:
                         if new_kills:
                             event_bus.publish(
                                 "kill",
-                                {
-                                    "new_count": new_kills,
-                                },
+                                {"new_count": new_kills},
                             )
                         if new_assemblies:
                             event_bus.publish(
                                 "status",
-                                {
-                                    "new_assemblies": new_assemblies,
-                                },
+                                {"new_assemblies": new_assemblies},
                             )
                     except Exception:
                         pass  # SSE is best-effort
@@ -876,29 +889,35 @@ async def run_poller() -> None:
                     db.commit()
 
             except Exception as e:
-                logger.critical("Poller loop error (continuing): %s", e)
+                logger.critical("Sui poller loop error (continuing): %s", e)
 
-            # Reference data — poll infrequently (every 10th cycle)
+            # === Reference data from Sui GraphQL (characters) + World API (tribes) ===
             try:
                 if cycle_counter % 10 == 0:
-                    char_task = poll_endpoint(client, "v2/smartcharacters")
-                    tribe_task = poll_endpoint(client, "v2/tribes")
-                    raw_chars, raw_tribes = await asyncio.gather(char_task, tribe_task)
+                    # Characters from Sui GraphQL
+                    raw_chars = await sui.poll_characters(client)
+
+                    # Tribes from World API (still serves static/reference data)
+                    raw_tribes = await poll_endpoint(client, "v2/tribes")
+
                     if raw_chars or raw_tribes:
                         ref_db = get_db()
                         new_chars = _ingest_smart_characters(ref_db, raw_chars)
                         new_tribes = _ingest_tribes(ref_db, raw_tribes)
 
                         # Fetch tribe details for member→tribe links
-                        detail_tribes = await _fetch_tribe_details(client, raw_tribes)
-                        if detail_tribes:
-                            _ingest_tribes(ref_db, detail_tribes)
+                        if raw_tribes:
+                            detail_tribes = await _fetch_tribe_details(
+                                client, raw_tribes
+                            )
+                            if detail_tribes:
+                                _ingest_tribes(ref_db, detail_tribes)
 
                         if new_chars or new_tribes:
                             _enrich_entities_from_characters(ref_db)
                             ref_db.commit()
                             logger.info(
-                                "Reference data: %d chars, %d tribes",
+                                "Reference data: %d chars (Sui), %d tribes (API)",
                                 new_chars,
                                 new_tribes,
                             )

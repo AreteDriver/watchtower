@@ -641,13 +641,78 @@ def test_update_entities_db_error():
 
 @respx.mock
 async def test_run_poller_one_iteration():
-    """Lines 300-327: run_poller main loop, one iteration."""
-    respx.get(url__regex=r".*/v2/killmails.*").mock(
-        return_value=Response(200, json=[{"id": "km-poll", "timestamp": 1000}])
-    )
-    respx.get(url__regex=r".*/v2/smartassemblies.*").mock(
-        return_value=Response(200, json=[{"id": "asm-poll"}])
-    )
+    """run_poller main loop, one iteration — uses Sui GraphQL for dynamic data."""
+    # Mock Sui GraphQL endpoint with killmail + assembly events
+    sui_killmail_response = {
+        "data": {
+            "events": {
+                "nodes": [
+                    {
+                        "contents": {
+                            "json": {
+                                "key": {"item_id": "km-poll", "tenant": "stillness"},
+                                "killer_id": {"item_id": "killer-1", "tenant": "stillness"},
+                                "victim_id": {"item_id": "victim-1", "tenant": "stillness"},
+                                "reported_by_character_id": {"item_id": "killer-1", "tenant": "stillness"},
+                                "loss_type": {"@variant": "STRUCTURE"},
+                                "kill_timestamp": "1000",
+                                "solar_system_id": {"item_id": "30013496", "tenant": "stillness"},
+                            }
+                        },
+                        "sender": {"address": "0xsender"},
+                        "timestamp": "2026-03-12T00:00:00.000Z",
+                        "sequenceNumber": 0,
+                    }
+                ],
+                "pageInfo": {"hasNextPage": False, "endCursor": None},
+            }
+        }
+    }
+    sui_assembly_response = {
+        "data": {
+            "events": {
+                "nodes": [
+                    {
+                        "contents": {
+                            "json": {
+                                "assembly_id": "asm-poll",
+                                "assembly_key": {"item_id": "asm-001", "tenant": "stillness"},
+                                "owner_cap_id": "0xcap",
+                                "type_id": "91978",
+                            }
+                        },
+                        "sender": {"address": "0xowner"},
+                        "timestamp": "2026-03-12T00:00:00.000Z",
+                        "sequenceNumber": 0,
+                    }
+                ],
+                "pageInfo": {"hasNextPage": False, "endCursor": None},
+            }
+        }
+    }
+    sui_empty_response = {
+        "data": {
+            "events": {
+                "nodes": [],
+                "pageInfo": {"hasNextPage": False, "endCursor": None},
+            }
+        }
+    }
+
+    # Sui GraphQL returns different responses based on event type in request body
+    call_idx = 0
+
+    def sui_router(request):
+        nonlocal call_idx
+        call_idx += 1
+        body = request.content.decode()
+        if "KillmailCreatedEvent" in body:
+            return Response(200, json=sui_killmail_response)
+        if "AssemblyCreatedEvent" in body:
+            return Response(200, json=sui_assembly_response)
+        return Response(200, json=sui_empty_response)
+
+    respx.post("https://graphql.testnet.sui.io/graphql").mock(side_effect=sui_router)
 
     test_db = _get_test_db()
     call_count = 0
@@ -675,7 +740,7 @@ async def test_run_poller_one_iteration():
         with pytest.raises(asyncio.CancelledError):
             await run_poller()
 
-    # Verify data was ingested
+    # Verify data was ingested from Sui GraphQL
     km = test_db.execute("SELECT COUNT(*) as c FROM killmails").fetchone()
     assert km["c"] >= 1
     asm = test_db.execute("SELECT COUNT(*) as c FROM smart_assemblies").fetchone()
