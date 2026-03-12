@@ -1,10 +1,19 @@
 const BASE = '/api';
 
-const STORAGE_KEY = 'watchtower_wallet';
+const SESSION_KEY = 'watchtower_session';
+const WALLET_KEY = 'watchtower_wallet';
 
 function getAuthHeaders(): Record<string, string> {
-  const wallet = localStorage.getItem(STORAGE_KEY);
-  return wallet ? { 'X-Wallet-Address': wallet } : {};
+  const headers: Record<string, string> = {};
+  const session = localStorage.getItem(SESSION_KEY);
+  if (session) {
+    headers['X-Session'] = session;
+  }
+  const wallet = localStorage.getItem(WALLET_KEY);
+  if (wallet) {
+    headers['X-Wallet-Address'] = wallet;
+  }
+  return headers;
 }
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -234,22 +243,21 @@ export interface AlertData {
   created_at: number;
 }
 
-export interface EveCharacter {
-  character_id: string;
-  character_name: string;
-  logged_in_at: number;
-  on_chain: Entity | null;
-}
-
-export interface EveSSOLogin {
-  auth_url: string;
-  state: string;
-}
-
-export interface EveSSOCallback {
+// Wallet auth types
+export interface WalletConnectResponse {
   session_token: string;
-  character_id: string;
-  character_name: string;
+  wallet_address: string;
+  tier: number;
+  tier_name: string;
+  is_admin: boolean;
+}
+
+export interface WalletMeResponse {
+  wallet_address: string;
+  tier: number;
+  tier_name: string;
+  is_admin: boolean;
+  connected_at: number;
 }
 
 // Cycle 5 types
@@ -325,13 +333,6 @@ export interface CrownRoster {
   uncrowned: number;
 }
 
-const EVE_SESSION_KEY = 'watchtower_eve_session';
-
-function getEveHeaders(): Record<string, string> {
-  const session = localStorage.getItem(EVE_SESSION_KEY);
-  return session ? { 'X-EVE-Session': session } : {};
-}
-
 export const api = {
   health: () => fetchJson<{ status: string; tables: Record<string, number> }>('/health'),
   search: (q: string) => fetchJson<{ results: SearchResult[] }>(`/search?q=${encodeURIComponent(q)}`),
@@ -379,17 +380,13 @@ export const api = {
   markAlertRead: (alertId: number) =>
     postJson<{ status: string }>(`/alerts/${alertId}/read`, {}),
 
-  // EVE SSO
-  eveSSOLogin: (redirectUri?: string) =>
-    fetchJson<EveSSOLogin>(`/auth/eve/login${redirectUri ? `?redirect_uri=${encodeURIComponent(redirectUri)}` : ''}`),
-  eveSSOCallback: (code: string, state: string) =>
-    fetchJson<EveSSOCallback>(`/auth/eve/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`),
-  eveMe: () =>
-    fetchJson<EveCharacter>('/auth/eve/me', {
-      headers: getEveHeaders(),
-    }),
-  eveLogout: () =>
-    postJson<{ status: string }>('/auth/eve/logout', {}),
+  // Wallet auth
+  walletConnect: (walletAddress: string) =>
+    postJson<WalletConnectResponse>('/auth/wallet/connect', { wallet_address: walletAddress }),
+  walletMe: () =>
+    fetchJson<WalletMeResponse>('/auth/wallet/me'),
+  walletDisconnect: () =>
+    postJson<{ status: string }>('/auth/wallet/disconnect', {}),
 
   // SSE status
   sseStatus: () => fetchJson<{ subscribers: number; timestamp: number }>('/events/status'),

@@ -408,7 +408,7 @@ async def get_subscription(wallet_address: str):
 
 
 class SubscribeRequest(BaseModel):
-    wallet_address: str = Field(pattern=r"^0x[a-fA-F0-9]{40}$")
+    wallet_address: str = Field(pattern=r"^0x[a-fA-F0-9]{64}$")
     tier: int
     duration: int = 604800  # 7 days default
 

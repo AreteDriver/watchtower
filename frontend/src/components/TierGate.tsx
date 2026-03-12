@@ -8,7 +8,7 @@ interface TierGateProps {
 }
 
 export function TierGate({ requiredTier, children, featureName }: TierGateProps) {
-  const { wallet, subscription, connecting } = useAuth();
+  const { wallet, subscription, connecting, isAdmin } = useAuth();
   const currentTier = subscription?.tier ?? 0;
 
   // Show skeleton while wallet is connecting or subscription is loading
@@ -20,6 +20,11 @@ export function TierGate({ requiredTier, children, featureName }: TierGateProps)
         <div className="h-3 bg-[var(--eve-border)] rounded w-1/2" />
       </div>
     );
+  }
+
+  // Admin bypass — full access to all tiers
+  if (wallet && isAdmin) {
+    return <>{children}</>;
   }
 
   if (wallet && subscription?.active && currentTier >= requiredTier) {

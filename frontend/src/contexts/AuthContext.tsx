@@ -1,17 +1,8 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import type { ReactNode } from 'react';
+import { useCurrentAccount, useDisconnectWallet } from '@mysten/dapp-kit';
 import { api } from '../api';
-import type { SubscriptionData, EveCharacter } from '../api';
-
-declare global {
-  interface Window {
-    ethereum?: {
-      request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
-      on: (event: string, handler: (...args: unknown[]) => void) => void;
-      removeListener: (event: string, handler: (...args: unknown[]) => void) => void;
-    };
-  }
-}
+import type { SubscriptionData } from '../api';
 
 export const TIER_LABELS: Record<number, { name: string; color: string }> = {
   0: { name: 'Free', color: 'var(--eve-dim)' },
@@ -20,30 +11,29 @@ export const TIER_LABELS: Record<number, { name: string; color: string }> = {
   3: { name: 'Spymaster', color: 'var(--eve-orange)' },
 };
 
+const SESSION_KEY = 'watchtower_session';
+const WALLET_KEY = 'watchtower_wallet';
+
 interface AuthState {
   wallet: string | null;
   subscription: SubscriptionData | null;
   connecting: boolean;
-  hasProvider: boolean;
+  isAdmin: boolean;
   connect: () => Promise<void>;
   disconnect: () => void;
   refreshSubscription: () => Promise<void>;
-  eveCharacter: EveCharacter | null;
-  eveLogin: () => Promise<void>;
-  eveLogout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
-
-const STORAGE_KEY = 'watchtower_wallet';
-const EVE_SESSION_KEY = 'watchtower_eve_session';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [wallet, setWallet] = useState<string | null>(null);
   const [subscription, setSubscription] = useState<SubscriptionData | null>(null);
   const [connecting, setConnecting] = useState(false);
-  const [eveCharacter, setEveCharacter] = useState<EveCharacter | null>(null);
-  const hasProvider = typeof window !== 'undefined' && !!window.ethereum;
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  const currentAccount = useCurrentAccount();
+  const { mutate: disconnectWallet } = useDisconnectWallet();
 
   const fetchSubscription = useCallback(async (addr: string) => {
     try {
@@ -54,69 +44,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const setWalletAndPersist = useCallback((addr: string | null) => {
-    setWallet(addr);
-    if (addr) {
-      localStorage.setItem(STORAGE_KEY, addr);
-    } else {
-      localStorage.removeItem(STORAGE_KEY);
+  // When Sui wallet connects/changes, register session with backend
+  useEffect(() => {
+    if (!currentAccount?.address) {
+      // Wallet disconnected in dapp-kit but we may still have a session
+      return;
     }
-  }, []);
 
-  // Restore wallet from localStorage + verify it's still connected
-  useEffect(() => {
-    if (!window.ethereum) return;
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (!saved) return;
+    const suiAddress = currentAccount.address;
 
-    window.ethereum
-      .request({ method: 'eth_accounts' })
-      .then((accounts) => {
-        const accs = accounts as string[];
-        const stillConnected = accs.some(
-          (a) => a.toLowerCase() === saved.toLowerCase()
-        );
-        if (stillConnected) {
-          setWallet(saved);
-        } else {
-          localStorage.removeItem(STORAGE_KEY);
-        }
-      })
-      .catch(() => localStorage.removeItem(STORAGE_KEY));
-  }, []);
+    // Check if we already have a session for this wallet
+    const savedWallet = localStorage.getItem(WALLET_KEY);
+    const savedSession = localStorage.getItem(SESSION_KEY);
+    if (savedWallet === suiAddress && savedSession) {
+      // Already have a session, just restore state
+      setWallet(suiAddress);
+      // Verify session is still valid
+      api.walletMe()
+        .then((me) => {
+          setIsAdmin(me.is_admin);
+        })
+        .catch(() => {
+          // Session expired, re-register
+          registerSession(suiAddress);
+        });
+      return;
+    }
 
-  // Restore EVE session from localStorage
-  useEffect(() => {
-    const session = localStorage.getItem(EVE_SESSION_KEY);
-    if (!session) return;
+    // New connection — register with backend
+    registerSession(suiAddress);
+  }, [currentAccount?.address]);
 
-    api.eveMe()
-      .then(setEveCharacter)
-      .catch(() => {
-        localStorage.removeItem(EVE_SESSION_KEY);
-        setEveCharacter(null);
-      });
-  }, []);
-
-  // Handle EVE SSO callback (check URL params on mount)
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const code = params.get('code');
-    const state = params.get('state');
-    if (!code || !state) return;
-
-    // Clean URL
-    window.history.replaceState({}, '', window.location.pathname);
-
-    api.eveSSOCallback(code, state)
-      .then((result) => {
-        localStorage.setItem(EVE_SESSION_KEY, result.session_token);
-        // Fetch full character info
-        return api.eveMe();
-      })
-      .then(setEveCharacter)
-      .catch(() => setEveCharacter(null));
-  }, []);
+  const registerSession = async (address: string) => {
+    setConnecting(true);
+    try {
+      const result = await api.walletConnect(address);
+      localStorage.setItem(SESSION_KEY, result.session_token);
+      localStorage.setItem(WALLET_KEY, address);
+      setWallet(address);
+      setIsAdmin(result.is_admin);
+    } catch {
+      // Backend may be down, still show wallet as connected
+      localStorage.setItem(WALLET_KEY, address);
+      setWallet(address);
+    }
+    setConnecting(false);
+  };
 
   // Fetch subscription when wallet changes
   useEffect(() => {
@@ -127,65 +100,57 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     fetchSubscription(wallet);
   }, [wallet, fetchSubscription]);
 
-  // Listen for account changes from wallet
+  // Restore session on mount (if dapp-kit hasn't connected yet)
   useEffect(() => {
-    if (!window.ethereum) return;
-    const handler = (...args: unknown[]) => {
-      const accounts = args[0] as string[];
-      if (accounts.length > 0) {
-        setWalletAndPersist(accounts[0]);
-      } else {
-        setWalletAndPersist(null);
-      }
-    };
-    window.ethereum.on('accountsChanged', handler);
-    return () => window.ethereum?.removeListener('accountsChanged', handler);
-  }, [setWalletAndPersist]);
+    const savedSession = localStorage.getItem(SESSION_KEY);
+    const savedWallet = localStorage.getItem(WALLET_KEY);
+    if (savedSession && savedWallet && !currentAccount) {
+      // We have a saved session but dapp-kit hasn't auto-connected yet
+      // Verify session validity
+      api.walletMe()
+        .then((me) => {
+          setWallet(me.wallet_address);
+          setIsAdmin(me.is_admin);
+        })
+        .catch(() => {
+          // Session invalid, clear
+          localStorage.removeItem(SESSION_KEY);
+          localStorage.removeItem(WALLET_KEY);
+        });
+    }
+  }, []);
+
+  // Handle wallet disconnect from dapp-kit
+  useEffect(() => {
+    if (currentAccount === null && wallet) {
+      // dapp-kit reports no account but we have a wallet — user disconnected
+      // Only clear if we previously had a currentAccount (not initial load)
+    }
+  }, [currentAccount, wallet]);
 
   const connect = useCallback(async () => {
-    if (!window.ethereum) return;
-    setConnecting(true);
-    try {
-      const accounts = (await window.ethereum.request({
-        method: 'eth_requestAccounts',
-      })) as string[];
-      if (accounts.length > 0) {
-        setWalletAndPersist(accounts[0]);
-      }
-    } catch {
-      // User rejected
-    }
-    setConnecting(false);
-  }, [setWalletAndPersist]);
+    // This is a no-op now — connection is handled by dapp-kit ConnectButton
+    // which triggers the useEffect above via useCurrentAccount()
+  }, []);
 
   const disconnect = useCallback(() => {
-    setWalletAndPersist(null);
+    // Clear backend session
+    api.walletDisconnect().catch(() => {});
+
+    // Clear local state
+    localStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem(WALLET_KEY);
+    setWallet(null);
     setSubscription(null);
-  }, [setWalletAndPersist]);
+    setIsAdmin(false);
+
+    // Disconnect dapp-kit wallet
+    disconnectWallet();
+  }, [disconnectWallet]);
 
   const refreshSubscription = useCallback(async () => {
     if (wallet) await fetchSubscription(wallet);
   }, [wallet, fetchSubscription]);
-
-  const eveLogin = useCallback(async () => {
-    try {
-      const callbackUrl = `${window.location.origin}/`;
-      const result = await api.eveSSOLogin(callbackUrl);
-      window.location.href = result.auth_url;
-    } catch {
-      // SSO not configured
-    }
-  }, []);
-
-  const eveLogout = useCallback(async () => {
-    try {
-      await api.eveLogout();
-    } catch {
-      // Ignore
-    }
-    localStorage.removeItem(EVE_SESSION_KEY);
-    setEveCharacter(null);
-  }, []);
 
   return (
     <AuthContext.Provider
@@ -193,13 +158,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         wallet,
         subscription,
         connecting,
-        hasProvider,
+        isAdmin,
         connect,
         disconnect,
         refreshSubscription,
-        eveCharacter,
-        eveLogin,
-        eveLogout,
       }}
     >
       {children}

@@ -24,10 +24,15 @@ class Settings(BaseSettings):
     # Watcher Smart Assembly owner address (for assembly tracker)
     WATCHER_OWNER_ADDRESS: str = ""
 
-    # EVE SSO (CCP OAuth2)
-    EVE_SSO_CLIENT_ID: str = ""
-    EVE_SSO_SECRET_KEY: str = ""
-    EVE_SSO_CALLBACK_URL: str = ""
+    # Admin wallet addresses (comma-separated Sui addresses)
+    ADMIN_ADDRESSES: str = ""
+
+    @property
+    def admin_address_set(self) -> set[str]:
+        """Return normalized set of admin wallet addresses."""
+        if not self.ADMIN_ADDRESSES:
+            return set()
+        return {a.strip().lower() for a in self.ADMIN_ADDRESSES.split(",") if a.strip()}
 
     # Warden (autonomous threat intelligence loop)
     WARDEN_ENABLED: bool = True

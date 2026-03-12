@@ -146,6 +146,16 @@ CREATE TABLE IF NOT EXISTS eve_sessions (
 
 CREATE INDEX IF NOT EXISTS idx_eve_sessions_hash ON eve_sessions(session_hash);
 
+CREATE TABLE IF NOT EXISTS wallet_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_hash TEXT UNIQUE NOT NULL,
+    wallet_address TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    created_at INTEGER DEFAULT (unixepoch())
+);
+
+CREATE INDEX IF NOT EXISTS idx_wallet_sessions_hash ON wallet_sessions(session_hash);
+
 CREATE TABLE IF NOT EXISTS watch_alerts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     watch_id INTEGER NOT NULL,

@@ -461,7 +461,7 @@ def test_subscription_not_found(client):
 def test_subscribe(client):
     r = client.post(
         "/api/subscribe",
-        json={"wallet_address": "0x1234567890abcdef1234567890abcdef12345678", "tier": 2},
+        json={"wallet_address": "0x" + "a1b2c3d4" * 8, "tier": 2},
     )
     assert r.status_code == 200
     data = r.json()
@@ -480,7 +480,7 @@ def test_subscribe_invalid_wallet(client):
 def test_subscribe_invalid_tier(client):
     r = client.post(
         "/api/subscribe",
-        json={"wallet_address": "0x1234567890abcdef1234567890abcdef12345678", "tier": 5},
+        json={"wallet_address": "0x" + "a1b2c3d4" * 8, "tier": 5},
     )
     assert r.status_code == 400
 

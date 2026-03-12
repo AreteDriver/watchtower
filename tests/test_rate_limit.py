@@ -40,7 +40,7 @@ def client(test_db):
 
 def test_subscribe_rate_limit(client):
     """POST /subscribe should be rate limited to 5/minute."""
-    wallet = "0x1234567890abcdef1234567890abcdef12345678"
+    wallet = "0x" + "ab" * 32
     for i in range(5):
         r = client.post("/api/subscribe", json={"wallet_address": wallet, "tier": 1})
         assert r.status_code == 200, f"Request {i + 1} should succeed"

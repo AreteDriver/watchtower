@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from backend.analysis.subscriptions import _cache as sub_cache
-from backend.api.tier_gate import check_tier_access
+from backend.api.tier_gate import check_tier_access, is_admin_wallet
 from backend.db.database import SCHEMA
 
 _INSERT_SUB = (
@@ -15,6 +15,15 @@ _INSERT_SUB = (
     " (wallet_address, tier, expires_at, created_at)"
     " VALUES (?, ?, ?, ?)"
 )
+
+# Sui-format addresses (0x + 64 hex)
+WALLET_A = "0x" + "aa" * 32
+WALLET_B = "0x" + "bb" * 32
+WALLET_C = "0x" + "cc" * 32
+WALLET_D = "0x" + "dd" * 32
+WALLET_E = "0x" + "ee" * 32
+WALLET_F = "0x" + "ff" * 32
+ADMIN_WALLET = "0x" + "01" * 32
 
 
 @pytest.fixture
@@ -56,7 +65,7 @@ def test_gated_route_no_wallet(test_db):
 
 def test_gated_route_no_subscription(test_db):
     """Gated route with wallet but no subscription should raise 403."""
-    req = _make_request("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+    req = _make_request(WALLET_A)
     with patch("backend.db.database.get_db", return_value=test_db):
         with pytest.raises(Exception) as exc:
             check_tier_access(req, "get_entity_fingerprint")
@@ -66,30 +75,22 @@ def test_gated_route_no_subscription(test_db):
 
 def test_gated_route_sufficient_tier(test_db):
     """Gated route with sufficient tier should pass."""
-    wallet = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     now = int(time.time())
-    test_db.execute(
-        _INSERT_SUB,
-        (wallet, 1, now + 86400, now),
-    )
+    test_db.execute(_INSERT_SUB, (WALLET_B, 1, now + 86400, now))
     test_db.commit()
 
-    req = _make_request(wallet)
+    req = _make_request(WALLET_B)
     with patch("backend.db.database.get_db", return_value=test_db):
         check_tier_access(req, "get_entity_fingerprint")
 
 
 def test_gated_route_insufficient_tier(test_db):
     """Scout trying to access Spymaster endpoint should raise 403."""
-    wallet = "0xcccccccccccccccccccccccccccccccccccccccc"
     now = int(time.time())
-    test_db.execute(
-        _INSERT_SUB,
-        (wallet, 1, now + 86400, now),
-    )
+    test_db.execute(_INSERT_SUB, (WALLET_C, 1, now + 86400, now))
     test_db.commit()
 
-    req = _make_request(wallet)
+    req = _make_request(WALLET_C)
     with patch("backend.db.database.get_db", return_value=test_db):
         with pytest.raises(Exception) as exc:
             check_tier_access(req, "get_kill_graph")
@@ -99,14 +100,10 @@ def test_gated_route_insufficient_tier(test_db):
 
 def test_gated_route_expired_subscription(test_db):
     """Expired subscription should raise 403."""
-    wallet = "0xdddddddddddddddddddddddddddddddddddddd"
-    test_db.execute(
-        _INSERT_SUB,
-        (wallet, 3, 1000, 500),
-    )
+    test_db.execute(_INSERT_SUB, (WALLET_D, 3, 1000, 500))
     test_db.commit()
 
-    req = _make_request(wallet)
+    req = _make_request(WALLET_D)
     with patch("backend.db.database.get_db", return_value=test_db):
         with pytest.raises(Exception) as exc:
             check_tier_access(req, "get_entity_fingerprint")
@@ -115,30 +112,47 @@ def test_gated_route_expired_subscription(test_db):
 
 def test_oracle_can_access_scout(test_db):
     """Higher tier should access lower tier endpoints."""
-    wallet = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
     now = int(time.time())
-    test_db.execute(
-        _INSERT_SUB,
-        (wallet, 2, now + 86400, now),
-    )
+    test_db.execute(_INSERT_SUB, (WALLET_E, 2, now + 86400, now))
     test_db.commit()
 
-    req = _make_request(wallet)
+    req = _make_request(WALLET_E)
     with patch("backend.db.database.get_db", return_value=test_db):
         check_tier_access(req, "get_entity_fingerprint")
 
 
 def test_spymaster_can_access_all(test_db):
     """Spymaster should access all gated endpoints."""
-    wallet = "0xffffffffffffffffffffffffffffffffffffffff"
     now = int(time.time())
-    test_db.execute(
-        _INSERT_SUB,
-        (wallet, 3, now + 86400, now),
-    )
+    test_db.execute(_INSERT_SUB, (WALLET_F, 3, now + 86400, now))
     test_db.commit()
 
-    req = _make_request(wallet)
+    req = _make_request(WALLET_F)
     with patch("backend.db.database.get_db", return_value=test_db):
-        for route in ["get_entity_fingerprint", "get_entity_narrative", "get_kill_graph"]:
+        for route in [
+            "get_entity_fingerprint",
+            "get_entity_narrative",
+            "get_kill_graph",
+        ]:
             check_tier_access(req, route)
+
+
+def test_admin_bypasses_tier_gate(test_db):
+    """Admin wallet skips tier check entirely, even with no subscription."""
+    req = _make_request(ADMIN_WALLET)
+    with (
+        patch("backend.api.tier_gate.settings") as mock_settings,
+        patch("backend.db.database.get_db", return_value=test_db),
+    ):
+        mock_settings.admin_address_set = {ADMIN_WALLET.lower()}
+        # Should pass Spymaster-gated route without any subscription
+        check_tier_access(req, "get_kill_graph")
+
+
+def test_is_admin_wallet():
+    """is_admin_wallet correctly checks admin set."""
+    with patch("backend.api.tier_gate.settings") as mock_settings:
+        mock_settings.admin_address_set = {ADMIN_WALLET.lower()}
+        assert is_admin_wallet(ADMIN_WALLET) is True
+        assert is_admin_wallet(WALLET_A) is False
+        assert is_admin_wallet("") is False

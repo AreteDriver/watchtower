@@ -1,22 +1,23 @@
-"""EVE SSO (OAuth2) authentication routes.
+"""Sui wallet authentication routes.
 
-Implements CCP's EVE Online SSO for character identity verification.
-Users prove they own a character, which can then be cross-referenced
-with on-chain EVE Frontier data.
+Implements wallet-based session management for EVE Frontier (Sui blockchain).
+Frontend proves wallet ownership via @mysten/dapp-kit, then registers a session
+here. Signature verification is a TODO for production — dapp-kit adapter
+already verifies ownership client-side.
 
 Flow:
-  1. GET /api/auth/eve/login  → redirect URL to CCP SSO
-  2. GET /api/auth/eve/callback → exchange code for tokens, fetch character
-  3. GET /api/auth/eve/me → return current session character info
-  4. POST /api/auth/eve/logout → clear session
+  1. POST /api/auth/wallet/connect  → create session from Sui wallet address
+  2. GET  /api/auth/wallet/me       → return current session + tier info
+  3. POST /api/auth/wallet/disconnect → clear session
 """
 
 import hashlib
+import re
 import secrets
 import time
 
-import httpx
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel, Field
 
 from backend.core.config import settings
 from backend.core.logger import get_logger
@@ -26,203 +27,157 @@ logger = get_logger("auth")
 
 router = APIRouter(prefix="/auth")
 
-EVE_SSO_AUTH_URL = "https://login.eveonline.com/v2/oauth/authorize"
-EVE_SSO_TOKEN_URL = "https://login.eveonline.com/v2/oauth/token"
-EVE_SSO_VERIFY_URL = "https://esi.evetech.net/verify/"
+# Sui addresses: 0x + 64 hex chars (32 bytes)
+SUI_ADDRESS_RE = re.compile(r"^0x[a-fA-F0-9]{64}$")
 
-# In-memory state store for CSRF protection (short-lived, bounded)
-_pending_states: dict[str, float] = {}
-STATE_TTL = 300  # 5 minutes
-MAX_PENDING_STATES = 1000
+# Session TTL: 7 days
+SESSION_TTL = 7 * 86400
 
 
-def _clean_expired_states() -> None:
-    """Remove expired OAuth states. Cap total to prevent memory exhaustion."""
-    now = time.time()
-    expired = [k for k, v in _pending_states.items() if now - v > STATE_TTL]
-    for k in expired:
-        del _pending_states[k]
-    # Hard cap: evict oldest if still over limit
-    while len(_pending_states) > MAX_PENDING_STATES:
-        oldest = min(_pending_states, key=_pending_states.get)  # type: ignore[arg-type]
-        del _pending_states[oldest]
+class WalletConnectRequest(BaseModel):
+    wallet_address: str = Field(
+        ...,
+        pattern=r"^0x[a-fA-F0-9]{64}$",
+        description="Sui wallet address (0x + 64 hex chars)",
+    )
 
 
-def _generate_session_token() -> str:
-    """Generate a cryptographically secure session token."""
-    return secrets.token_urlsafe(32)
+class WalletConnectResponse(BaseModel):
+    session_token: str
+    wallet_address: str
+    tier: int
+    tier_name: str
+    is_admin: bool
 
 
-@router.get("/eve/login")
-async def eve_sso_login(
-    redirect_uri: str = Query(default=""),
-):
-    """Generate EVE SSO authorization URL.
+class WalletMeResponse(BaseModel):
+    wallet_address: str
+    tier: int
+    tier_name: str
+    is_admin: bool
+    connected_at: int
 
-    Returns the URL the frontend should redirect to for CCP login.
+
+def _is_admin(wallet_address: str) -> bool:
+    """Check if wallet address is in the admin set."""
+    return wallet_address.lower() in settings.admin_address_set
+
+
+@router.post("/wallet/connect")
+async def wallet_connect(body: WalletConnectRequest) -> WalletConnectResponse:
+    """Register a wallet session.
+
+    Frontend proves ownership via dapp-kit wallet adapter.
+    TODO: Add server-side signature verification for production.
     """
-    if not settings.EVE_SSO_CLIENT_ID:
-        raise HTTPException(
-            status_code=503,
-            detail="EVE SSO not configured. Set WATCHTOWER_EVE_SSO_CLIENT_ID.",
-        )
+    wallet_address = body.wallet_address.lower()
 
-    state = secrets.token_urlsafe(32)
-    _clean_expired_states()
-    _pending_states[state] = time.time()
-
-    callback_url = redirect_uri or settings.EVE_SSO_CALLBACK_URL
-    if not callback_url:
-        raise HTTPException(
-            status_code=503,
-            detail="EVE SSO callback URL not configured.",
-        )
-
-    params = {
-        "response_type": "code",
-        "redirect_uri": callback_url,
-        "client_id": settings.EVE_SSO_CLIENT_ID,
-        "scope": "publicData",
-        "state": state,
-    }
-    auth_url = f"{EVE_SSO_AUTH_URL}?{'&'.join(f'{k}={v}' for k, v in params.items())}"
-
-    return {"auth_url": auth_url, "state": state}
-
-
-@router.get("/eve/callback")
-async def eve_sso_callback(
-    code: str = Query(...),
-    state: str = Query(...),
-):
-    """Handle EVE SSO callback — exchange code for character info."""
-    # Validate state (CSRF)
-    _clean_expired_states()
-    if state not in _pending_states:
-        raise HTTPException(400, "Invalid or expired OAuth state.")
-    del _pending_states[state]
-
-    if not settings.EVE_SSO_CLIENT_ID or not settings.EVE_SSO_SECRET_KEY:
-        raise HTTPException(503, "EVE SSO not fully configured.")
-
-    # Exchange code for access token
-    try:
-        async with httpx.AsyncClient() as client:
-            token_resp = await client.post(
-                EVE_SSO_TOKEN_URL,
-                data={
-                    "grant_type": "authorization_code",
-                    "code": code,
-                    "client_id": settings.EVE_SSO_CLIENT_ID,
-                    "client_secret": settings.EVE_SSO_SECRET_KEY,
-                },
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
-                timeout=10,
-            )
-            token_resp.raise_for_status()
-            tokens = token_resp.json()
-
-            # Verify token and get character info
-            verify_resp = await client.get(
-                EVE_SSO_VERIFY_URL,
-                headers={"Authorization": f"Bearer {tokens['access_token']}"},
-                timeout=10,
-            )
-            verify_resp.raise_for_status()
-            character = verify_resp.json()
-
-    except httpx.HTTPStatusError as e:
-        logger.error("EVE SSO token exchange failed: HTTP %d", e.response.status_code)
-        raise HTTPException(502, "EVE SSO authentication failed.") from None
-    except Exception as e:
-        logger.error("EVE SSO error: %s", e)
-        raise HTTPException(502, "EVE SSO authentication failed.") from None
-
-    # Extract character data
-    character_id = str(character.get("CharacterID", ""))
-    character_name = character.get("CharacterName", "")
-
-    if not character_id:
-        raise HTTPException(502, "Could not verify character identity.")
+    if not SUI_ADDRESS_RE.match(body.wallet_address):
+        raise HTTPException(400, "Invalid Sui wallet address format.")
 
     # Generate session token
-    session_token = _generate_session_token()
+    session_token = secrets.token_urlsafe(32)
     session_hash = hashlib.sha256(session_token.encode()).hexdigest()
 
-    # Store session in DB
+    expires_at = int(time.time()) + SESSION_TTL
+
     db = get_db()
+
+    # Store session
     db.execute(
-        """INSERT INTO eve_sessions
-           (session_hash, character_id, character_name, access_token, refresh_token, expires_at)
-           VALUES (?, ?, ?, ?, ?, ?)
-           ON CONFLICT(session_hash) DO UPDATE SET
-               character_id = excluded.character_id,
-               character_name = excluded.character_name,
-               access_token = excluded.access_token,
-               refresh_token = excluded.refresh_token,
-               expires_at = excluded.expires_at""",
-        (
-            session_hash,
-            character_id,
-            character_name,
-            tokens.get("access_token", ""),
-            tokens.get("refresh_token", ""),
-            int(time.time()) + tokens.get("expires_in", 1200),
-        ),
+        """INSERT INTO wallet_sessions (session_hash, wallet_address, expires_at)
+           VALUES (?, ?, ?)""",
+        (session_hash, wallet_address, expires_at),
     )
     db.commit()
 
-    logger.info("EVE SSO login: %s (%s)", character_name, character_id)
+    # Get subscription tier
+    from backend.analysis.subscriptions import check_subscription
 
-    return {
-        "session_token": session_token,
-        "character_id": character_id,
-        "character_name": character_name,
-    }
+    sub = check_subscription(db, wallet_address)
+    is_admin = _is_admin(wallet_address)
+
+    logger.info(
+        "Wallet connected: %s (admin=%s, tier=%d)",
+        wallet_address[:16],
+        is_admin,
+        sub["tier"],
+    )
+
+    return WalletConnectResponse(
+        session_token=session_token,
+        wallet_address=wallet_address,
+        tier=sub["tier"],
+        tier_name=sub["tier_name"],
+        is_admin=is_admin,
+    )
 
 
-@router.get("/eve/me")
-async def eve_sso_me(request: Request):
-    """Return the character info for the current session."""
-    session_token = request.headers.get("X-EVE-Session", "")
+def _get_session_wallet(request: Request) -> str | None:
+    """Extract wallet address from session header.
+
+    Checks X-Session header, falls back to X-EVE-Session for backwards compat.
+    """
+    session_token = request.headers.get("X-Session", request.headers.get("X-EVE-Session", ""))
     if not session_token:
-        raise HTTPException(401, "No EVE session. Login via /api/auth/eve/login.")
+        return None
 
     session_hash = hashlib.sha256(session_token.encode()).hexdigest()
     db = get_db()
     row = db.execute(
-        """SELECT character_id, character_name, created_at
-           FROM eve_sessions WHERE session_hash = ? AND expires_at > ?""",
+        """SELECT wallet_address FROM wallet_sessions
+           WHERE session_hash = ? AND expires_at > ?""",
         (session_hash, int(time.time())),
     ).fetchone()
 
     if not row:
-        raise HTTPException(401, "Session expired. Please log in again.")
+        return None
+    return row["wallet_address"]
 
-    # Cross-reference with on-chain data
-    entity = db.execute(
-        """SELECT entity_id, display_name, kill_count, death_count, gate_count
-           FROM entities WHERE display_name = ? OR entity_id = ?
-           LIMIT 1""",
-        (row["character_name"], row["character_id"]),
+
+@router.get("/wallet/me")
+async def wallet_me(request: Request) -> WalletMeResponse:
+    """Return wallet info for the current session."""
+    session_token = request.headers.get("X-Session", request.headers.get("X-EVE-Session", ""))
+    if not session_token:
+        raise HTTPException(401, "No session. Connect wallet first.")
+
+    session_hash = hashlib.sha256(session_token.encode()).hexdigest()
+    db = get_db()
+    row = db.execute(
+        """SELECT wallet_address, created_at FROM wallet_sessions
+           WHERE session_hash = ? AND expires_at > ?""",
+        (session_hash, int(time.time())),
     ).fetchone()
 
-    return {
-        "character_id": row["character_id"],
-        "character_name": row["character_name"],
-        "logged_in_at": row["created_at"],
-        "on_chain": dict(entity) if entity else None,
-    }
+    if not row:
+        raise HTTPException(401, "Session expired. Please reconnect wallet.")
+
+    from backend.analysis.subscriptions import check_subscription
+
+    wallet_address = row["wallet_address"]
+    sub = check_subscription(db, wallet_address)
+
+    return WalletMeResponse(
+        wallet_address=wallet_address,
+        tier=sub["tier"],
+        tier_name=sub["tier_name"],
+        is_admin=_is_admin(wallet_address),
+        connected_at=row["created_at"],
+    )
 
 
-@router.post("/eve/logout")
-async def eve_sso_logout(request: Request):
-    """Clear EVE SSO session."""
-    session_token = request.headers.get("X-EVE-Session", "")
+@router.post("/wallet/disconnect")
+async def wallet_disconnect(request: Request):
+    """Clear wallet session."""
+    session_token = request.headers.get("X-Session", request.headers.get("X-EVE-Session", ""))
     if session_token:
         session_hash = hashlib.sha256(session_token.encode()).hexdigest()
         db = get_db()
-        db.execute("DELETE FROM eve_sessions WHERE session_hash = ?", (session_hash,))
+        db.execute(
+            "DELETE FROM wallet_sessions WHERE session_hash = ?",
+            (session_hash,),
+        )
         db.commit()
 
-    return {"status": "logged_out"}
+    return {"status": "disconnected"}

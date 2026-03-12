@@ -98,10 +98,17 @@ app.add_middleware(
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "https://watchtower-evefrontier.fly.dev",
+        "https://watchtower-evefrontier.vercel.app",
     ],
     allow_credentials=False,
     allow_methods=["GET", "POST", "DELETE"],
-    allow_headers=["Content-Type", "Authorization", "X-Wallet-Address", "X-EVE-Session"],
+    allow_headers=[
+        "Content-Type",
+        "Authorization",
+        "X-Wallet-Address",
+        "X-Session",
+        "X-EVE-Session",
+    ],
 )
 
 app.state.limiter = limiter

@@ -3,6 +3,7 @@
 from fastapi import HTTPException, Request
 
 from backend.analysis.subscriptions import TIER_NAMES, get_tier_for_endpoint
+from backend.core.config import settings
 from backend.core.logger import get_logger
 
 logger = get_logger("tier_gate")
@@ -19,10 +20,18 @@ _GATED_ROUTES = {
 }
 
 
+def is_admin_wallet(wallet_address: str) -> bool:
+    """Check if a wallet address has admin privileges."""
+    if not wallet_address:
+        return False
+    return wallet_address.lower() in settings.admin_address_set
+
+
 def check_tier_access(request: Request, route_name: str) -> None:
     """Check if request has sufficient subscription tier.
 
     Reads wallet address from X-Wallet-Address header.
+    Admin wallets bypass all tier checks.
     Free-tier endpoints pass through without checks.
 
     Raises HTTPException(403) if insufficient tier.
@@ -44,6 +53,10 @@ def check_tier_access(request: Request, route_name: str) -> None:
                 f"This endpoint requires {TIER_NAMES.get(required_tier, 'paid')} tier."
             ),
         )
+
+    # Admin bypass — skip tier check entirely
+    if is_admin_wallet(wallet):
+        return
 
     from backend.analysis.subscriptions import check_subscription
     from backend.db.database import get_db
