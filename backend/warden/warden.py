@@ -436,10 +436,17 @@ async def run_warden_cycle() -> list[Hypothesis]:
             ", ".join(set(h.category for h in committed)),
         )
 
-        # Write to story_feed for frontend visibility
+        # Write to story_feed for frontend visibility (dedup: same title within 1 hour)
         try:
             db = get_db()
+            now = int(time.time())
             for h in committed:
+                existing = db.execute(
+                    "SELECT id FROM story_feed WHERE headline = ? AND timestamp > ?",
+                    (h.title, now - 3600),
+                ).fetchone()
+                if existing:
+                    continue
                 db.execute(
                     """INSERT INTO story_feed
                        (event_type, headline, body, entity_ids, severity, timestamp)
@@ -450,7 +457,7 @@ async def run_warden_cycle() -> list[Hypothesis]:
                         h.description,
                         h.entity_id or h.zone_id,
                         "critical" if h.composite >= 0.8 else "warning",
-                        int(time.time()),
+                        now,
                     ),
                 )
             db.commit()
