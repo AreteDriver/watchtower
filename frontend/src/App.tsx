@@ -374,8 +374,11 @@ export default function App() {
 
       {/* Footer */}
       <footer className="border-t border-[var(--eve-border)] px-4 sm:px-6 py-4 mt-12">
-        <div className="max-w-7xl mx-auto text-center text-xs text-[var(--eve-dim)]">
-          WatchTower — Chain Archaeology + Oracle Intelligence — EVE Frontier Hackathon 2026
+        <div className="max-w-7xl mx-auto text-center text-xs text-[var(--eve-dim)] space-y-1">
+          <div>WatchTower — Chain Archaeology + Oracle Intelligence — EVE Frontier Hackathon 2026</div>
+          <div style={{ fontFamily: "'Share Tech Mono', monospace", color: '#7F77DD', letterSpacing: '0.15em' }}>
+            POWERED BY AEGIS STACK
+          </div>
         </div>
       </footer>
     </div>
