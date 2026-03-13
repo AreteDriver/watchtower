@@ -93,7 +93,12 @@ def build_kill_graph(
             continue
 
         for a in attackers:
-            attacker_id = str(a.get("address") or a.get("characterId") or a.get("id", ""))
+            if isinstance(a, str):
+                attacker_id = a
+            else:
+                attacker_id = str(
+                    a.get("address") or a.get("characterId") or a.get("id", "")
+                )
             if not attacker_id or attacker_id == victim:
                 continue
             key = (attacker_id, victim)
