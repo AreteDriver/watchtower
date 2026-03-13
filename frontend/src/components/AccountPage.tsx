@@ -85,18 +85,25 @@ export function AccountPage() {
     setSubscribing(tier);
     setTxError('');
     try {
-      // Refetch pricing to get fresh rate
-      const freshData = await api.getPricing();
-      if (freshData.is_stale) {
-        setTxError('Price data is outdated. Please refresh prices and try again.');
+      // Read on-chain price from SubscriptionConfig (source of truth)
+      // The contract rejects payments below this amount, so use it directly
+      const configResp = await fetch('https://fullnode.testnet.sui.io:443', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0', id: 1, method: 'sui_getObject',
+          params: [SUBSCRIPTION_CONFIG, { showContent: true }],
+        }),
+      });
+      const configData = await configResp.json();
+      const fields = configData?.result?.data?.content?.fields;
+      const priceKey = tier === 1 ? 'price_scout' : tier === 2 ? 'price_oracle' : 'price_spymaster';
+      const onChainPrice = fields?.[priceKey];
+      if (!onChainPrice) {
+        setTxError('Could not read on-chain price. Try again.');
         return;
       }
-      const tierKey = TIER_KEYS[tier];
-      if (!tierKey || !freshData.tiers[tierKey]) {
-        setTxError('Invalid tier');
-        return;
-      }
-      const price = BigInt(freshData.tiers[tierKey].sui_mist);
+      const price = BigInt(onChainPrice);
 
       const tx = new Transaction();
       const [coin] = tx.splitCoins(tx.gas, [price]);
