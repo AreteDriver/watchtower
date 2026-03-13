@@ -422,226 +422,6 @@ export function AccountPage() {
         </div>
       </div>
 
-      {/* Wallet & Subscription */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Wallet Card */}
-        <div className="bg-[var(--eve-surface)] border border-[var(--eve-border)] rounded-lg p-5 space-y-4">
-          <div className="flex justify-between items-center">
-            <h3 className="text-sm font-bold text-[var(--eve-green)] uppercase tracking-wider">
-              Wallet
-            </h3>
-            <div className="flex items-center gap-2">
-              {isAdmin && (
-                <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded border
-                                 text-[var(--eve-red)] border-[var(--eve-red)]">
-                  Admin
-                </span>
-              )}
-              <span className="w-2 h-2 rounded-full bg-[var(--eve-green)]" />
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            <div>
-              <div className="text-[10px] text-[var(--eve-dim)] uppercase">Address</div>
-              <div className="text-sm text-[var(--eve-text)] font-mono break-all">{wallet}</div>
-            </div>
-            <div>
-              <div className="text-[10px] text-[var(--eve-dim)] uppercase">Network</div>
-              <div className="text-sm text-[var(--eve-text)]">Sui Mainnet</div>
-            </div>
-            <div>
-              <div className="text-[10px] text-[var(--eve-dim)] uppercase">Status</div>
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-[var(--eve-green)]" />
-                <span className="text-sm text-[var(--eve-text)]">Connected</span>
-              </div>
-            </div>
-          </div>
-
-          <button
-            onClick={disconnect}
-            className="w-full px-3 py-1.5 text-xs font-bold border border-[var(--eve-red)]
-                       text-[var(--eve-red)] rounded hover:bg-[var(--eve-red)]
-                       hover:text-[var(--eve-bg)] transition-colors"
-          >
-            Disconnect
-          </button>
-        </div>
-
-        {/* Subscription Card */}
-        <div
-          className="bg-[var(--eve-surface)] border rounded-lg p-5 space-y-4"
-          style={{ borderColor: tierLabel.color }}
-        >
-          <div className="flex justify-between items-center">
-            <h3 className="text-sm font-bold uppercase tracking-wider" style={{ color: tierLabel.color }}>
-              Subscription
-            </h3>
-            <span
-              className="text-[10px] font-bold uppercase px-2 py-0.5 rounded border"
-              style={{ color: tierLabel.color, borderColor: tierLabel.color }}
-            >
-              {tierLabel.name}
-            </span>
-          </div>
-
-          <div className="space-y-3">
-            <div>
-              <div className="text-[10px] text-[var(--eve-dim)] uppercase">Tier</div>
-              <div className="text-sm text-[var(--eve-text)]">
-                {tierLabel.name} (Level {currentTier})
-              </div>
-            </div>
-            <div>
-              <div className="text-[10px] text-[var(--eve-dim)] uppercase">Expires</div>
-              <div className="text-sm text-[var(--eve-text)]">
-                {subscription?.active ? formatExpiry(subscription.expires_at) : 'No active subscription'}
-              </div>
-            </div>
-            <div>
-              <div className="text-[10px] text-[var(--eve-dim)] uppercase">Features</div>
-              <ul className="text-xs text-[var(--eve-dim)] space-y-0.5 mt-1">
-                {[0, 1, 2, 3].filter((t) => t <= currentTier).flatMap((t) =>
-                  TIER_FEATURES[t].map((f) => (
-                    <li key={f} className="text-[var(--eve-text)]">+ {f}</li>
-                  ))
-                )}
-              </ul>
-            </div>
-          </div>
-
-          {currentTier < 3 && (
-            <div className="pt-2 border-t border-[var(--eve-border)]">
-              <div className="text-[10px] text-[var(--eve-dim)] uppercase mb-2">Upgrade</div>
-              <p className="text-xs text-[var(--eve-dim)]">
-                Transfer items to a Watcher Assembly to upgrade your tier.
-                Visit any Watcher-equipped Smart Assembly in-game.
-              </p>
-            </div>
-          )}
-
-          <button
-            onClick={refreshSubscription}
-            className="w-full px-3 py-1.5 text-xs font-bold border border-[var(--eve-border)]
-                       text-[var(--eve-dim)] rounded hover:border-[var(--eve-green)]
-                       hover:text-[var(--eve-green)] transition-colors"
-          >
-            Refresh Status
-          </button>
-
-          {currentTier >= 2 && (
-            <button
-              onClick={() => document.getElementById('nexus')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
-              className="w-full px-3 py-1.5 text-xs font-bold border border-[var(--eve-blue,#3B82F6)]
-                         text-[var(--eve-blue,#3B82F6)] rounded hover:bg-[var(--eve-blue,#3B82F6)]
-                         hover:text-[var(--eve-bg)] transition-colors"
-            >
-              Set Up NEXUS Webhooks
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Alerts */}
-      {alerts.length > 0 && (
-        <div className="bg-[var(--eve-surface)] border border-[var(--eve-border)] rounded-lg p-5 space-y-4">
-          <div className="flex justify-between items-center">
-            <h3 className="text-sm font-bold text-[var(--eve-orange,#FF6600)] uppercase tracking-wider">
-              Alerts
-            </h3>
-            <span className="text-xs text-[var(--eve-dim)]">
-              {alerts.filter((a) => !a.read).length} unread
-            </span>
-          </div>
-          <div className="space-y-2">
-            {alerts.map((alert) => (
-              <div
-                key={alert.id}
-                className={`flex items-start justify-between px-3 py-2 rounded border transition-colors ${
-                  alert.severity === 'critical'
-                    ? 'border-[var(--eve-red)]'
-                    : 'border-[var(--eve-border)]'
-                }`}
-              >
-                <div className="space-y-0.5">
-                  <div className="text-xs font-bold text-[var(--eve-text)]">{alert.title}</div>
-                  <div className="text-[10px] text-[var(--eve-dim)]">{alert.body}</div>
-                  <div className="text-[10px] text-[var(--eve-dim)]">
-                    {new Date(alert.created_at * 1000).toLocaleString()}
-                  </div>
-                </div>
-                <button
-                  onClick={() => dismissAlert(alert.id)}
-                  className="text-[10px] text-[var(--eve-dim)] hover:text-[var(--eve-text)]
-                             transition-colors px-2 py-1 shrink-0"
-                >
-                  Dismiss
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Active Watches */}
-      <div className="bg-[var(--eve-surface)] border border-[var(--eve-border)] rounded-lg p-5 space-y-4">
-        <div className="flex justify-between items-center">
-          <h3 className="text-sm font-bold text-[var(--eve-green)] uppercase tracking-wider">
-            Active Watches
-          </h3>
-          <span className="text-xs text-[var(--eve-dim)]">{watches.length} active</span>
-        </div>
-
-        {loadingWatches && (
-          <div className="text-xs text-[var(--eve-dim)]">Loading watches...</div>
-        )}
-
-        {!loadingWatches && watches.length === 0 && (
-          <div className="text-center py-6 space-y-2">
-            <div className="text-xs text-[var(--eve-dim)]">No active watches</div>
-            <p className="text-xs text-[var(--eve-dim)]">
-              {currentTier >= 2
-                ? 'Create watches from entity profiles to track movements and events.'
-                : 'Upgrade to Oracle tier to create watches.'}
-            </p>
-          </div>
-        )}
-
-        {watches.length > 0 && (
-          <div className="space-y-2">
-            {watches.map((w) => (
-              <div
-                key={w.id}
-                className="flex items-center justify-between px-3 py-2 rounded
-                           border border-[var(--eve-border)] hover:border-[var(--eve-green)]
-                           transition-colors"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="w-2 h-2 rounded-full bg-[var(--eve-green)]" />
-                  <div>
-                    <div className="text-xs text-[var(--eve-text)] font-mono">
-                      {w.target_id}
-                    </div>
-                    <div className="text-[10px] text-[var(--eve-dim)]">
-                      <WatchTypeLabel type={w.watch_type} />
-                      {w.webhook_url && ' + webhook'}
-                    </div>
-                  </div>
-                </div>
-                <button
-                  onClick={() => removeWatch(w.target_id)}
-                  className="text-[10px] text-[var(--eve-red)] hover:text-[var(--eve-text)]
-                             transition-colors px-2 py-1"
-                >
-                  Remove
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
       {/* NEXUS Subscriptions */}
       <div id="nexus" className="bg-[var(--eve-surface)] border border-[var(--eve-blue,#3B82F6)] rounded-lg p-5 space-y-4">
         <div className="flex justify-between items-center">
@@ -923,6 +703,243 @@ export function AccountPage() {
             {showDeliveries && nexusDeliveries.length === 0 && (
               <div className="mt-2 text-[10px] text-[var(--eve-dim)]">No deliveries yet.</div>
             )}
+          </div>
+        )}
+      </div>
+
+      {/* Wallet & Subscription */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Wallet Card */}
+        <div className="bg-[var(--eve-surface)] border border-[var(--eve-border)] rounded-lg p-5 space-y-4">
+          <div className="flex justify-between items-center">
+            <h3 className="text-sm font-bold text-[var(--eve-green)] uppercase tracking-wider">
+              Wallet
+            </h3>
+            <div className="flex items-center gap-2">
+              {isAdmin && (
+                <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded border
+                                 text-[var(--eve-red)] border-[var(--eve-red)]">
+                  Admin
+                </span>
+              )}
+              <span className="w-2 h-2 rounded-full bg-[var(--eve-green)]" />
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div>
+              <div className="text-[10px] text-[var(--eve-dim)] uppercase">Address</div>
+              <div className="text-sm text-[var(--eve-text)] font-mono break-all">{wallet}</div>
+            </div>
+            <div>
+              <div className="text-[10px] text-[var(--eve-dim)] uppercase">Network</div>
+              <div className="text-sm text-[var(--eve-text)]">Sui Mainnet</div>
+            </div>
+            <div>
+              <div className="text-[10px] text-[var(--eve-dim)] uppercase">Status</div>
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-[var(--eve-green)]" />
+                <span className="text-sm text-[var(--eve-text)]">Connected</span>
+              </div>
+            </div>
+          </div>
+
+          <button
+            onClick={disconnect}
+            className="w-full px-3 py-1.5 text-xs font-bold border border-[var(--eve-red)]
+                       text-[var(--eve-red)] rounded hover:bg-[var(--eve-red)]
+                       hover:text-[var(--eve-bg)] transition-colors"
+          >
+            Disconnect
+          </button>
+        </div>
+
+        {/* Subscription Card */}
+        <div
+          className="bg-[var(--eve-surface)] border rounded-lg p-5 space-y-4"
+          style={{ borderColor: tierLabel.color }}
+        >
+          <div className="flex justify-between items-center">
+            <h3 className="text-sm font-bold uppercase tracking-wider" style={{ color: tierLabel.color }}>
+              Subscription
+            </h3>
+            <span
+              className="text-[10px] font-bold uppercase px-2 py-0.5 rounded border"
+              style={{ color: tierLabel.color, borderColor: tierLabel.color }}
+            >
+              {tierLabel.name}
+            </span>
+          </div>
+
+          <div className="space-y-3">
+            <div>
+              <div className="text-[10px] text-[var(--eve-dim)] uppercase">Tier</div>
+              <div className="text-sm text-[var(--eve-text)]">
+                {tierLabel.name} (Level {currentTier})
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] text-[var(--eve-dim)] uppercase">Expires</div>
+              <div className="flex items-center gap-3">
+                <div className="text-sm text-[var(--eve-text)]">
+                  {subscription?.active ? formatExpiry(subscription.expires_at) : 'No active subscription'}
+                </div>
+                {/* Renew button — calls subscribe() which extends expiry in the Move contract registry.
+                    TODO: Wire true renew(capId, suiMist) once we can query the user's SubscriptionCap
+                    object ID from the frontend (e.g. via Sui GraphQL ownedObjects query). For now,
+                    subscribe() handles both new and renewal cases on-chain. */}
+                {subscription?.active && currentTier >= 1 && (
+                  <button
+                    className="px-3 py-1 text-[10px] font-bold rounded transition-opacity
+                               hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{ backgroundColor: tierLabel.color, color: 'var(--eve-bg)' }}
+                    disabled={subscribing !== null || pricingLoading || !pricing || pricing.is_stale}
+                    onClick={() => handleSubscribe(currentTier)}
+                  >
+                    {subscribing === currentTier ? 'Confirming...' : 'Renew (1 week)'}
+                  </button>
+                )}
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] text-[var(--eve-dim)] uppercase">Features</div>
+              <ul className="text-xs text-[var(--eve-dim)] space-y-0.5 mt-1">
+                {[0, 1, 2, 3].filter((t) => t <= currentTier).flatMap((t) =>
+                  TIER_FEATURES[t].map((f) => (
+                    <li key={f} className="text-[var(--eve-text)]">+ {f}</li>
+                  ))
+                )}
+              </ul>
+            </div>
+          </div>
+
+          {currentTier < 3 && (
+            <div className="pt-2 border-t border-[var(--eve-border)]">
+              <div className="text-[10px] text-[var(--eve-dim)] uppercase mb-2">Upgrade</div>
+              <p className="text-xs text-[var(--eve-dim)]">
+                Transfer items to a Watcher Assembly to upgrade your tier.
+                Visit any Watcher-equipped Smart Assembly in-game.
+              </p>
+            </div>
+          )}
+
+          <button
+            onClick={refreshSubscription}
+            className="w-full px-3 py-1.5 text-xs font-bold border border-[var(--eve-border)]
+                       text-[var(--eve-dim)] rounded hover:border-[var(--eve-green)]
+                       hover:text-[var(--eve-green)] transition-colors"
+          >
+            Refresh Status
+          </button>
+
+          {currentTier >= 2 && (
+            <button
+              onClick={() => document.getElementById('nexus')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+              className="w-full px-3 py-1.5 text-xs font-bold border border-[var(--eve-blue,#3B82F6)]
+                         text-[var(--eve-blue,#3B82F6)] rounded hover:bg-[var(--eve-blue,#3B82F6)]
+                         hover:text-[var(--eve-bg)] transition-colors"
+            >
+              Set Up NEXUS Webhooks
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Alerts */}
+      {alerts.length > 0 && (
+        <div className="bg-[var(--eve-surface)] border border-[var(--eve-border)] rounded-lg p-5 space-y-4">
+          <div className="flex justify-between items-center">
+            <h3 className="text-sm font-bold text-[var(--eve-orange,#FF6600)] uppercase tracking-wider">
+              Alerts
+            </h3>
+            <span className="text-xs text-[var(--eve-dim)]">
+              {alerts.filter((a) => !a.read).length} unread
+            </span>
+          </div>
+          <div className="space-y-2">
+            {alerts.map((alert) => (
+              <div
+                key={alert.id}
+                className={`flex items-start justify-between px-3 py-2 rounded border transition-colors ${
+                  alert.severity === 'critical'
+                    ? 'border-[var(--eve-red)]'
+                    : 'border-[var(--eve-border)]'
+                }`}
+              >
+                <div className="space-y-0.5">
+                  <div className="text-xs font-bold text-[var(--eve-text)]">{alert.title}</div>
+                  <div className="text-[10px] text-[var(--eve-dim)]">{alert.body}</div>
+                  <div className="text-[10px] text-[var(--eve-dim)]">
+                    {new Date(alert.created_at * 1000).toLocaleString()}
+                  </div>
+                </div>
+                <button
+                  onClick={() => dismissAlert(alert.id)}
+                  className="text-[10px] text-[var(--eve-dim)] hover:text-[var(--eve-text)]
+                             transition-colors px-2 py-1 shrink-0"
+                >
+                  Dismiss
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Active Watches */}
+      <div className="bg-[var(--eve-surface)] border border-[var(--eve-border)] rounded-lg p-5 space-y-4">
+        <div className="flex justify-between items-center">
+          <h3 className="text-sm font-bold text-[var(--eve-green)] uppercase tracking-wider">
+            Active Watches
+          </h3>
+          <span className="text-xs text-[var(--eve-dim)]">{watches.length} active</span>
+        </div>
+
+        {loadingWatches && (
+          <div className="text-xs text-[var(--eve-dim)]">Loading watches...</div>
+        )}
+
+        {!loadingWatches && watches.length === 0 && (
+          <div className="text-center py-6 space-y-2">
+            <div className="text-xs text-[var(--eve-dim)]">No active watches</div>
+            <p className="text-xs text-[var(--eve-dim)]">
+              {currentTier >= 2
+                ? 'Create watches from entity profiles to track movements and events.'
+                : 'Upgrade to Oracle tier to create watches.'}
+            </p>
+          </div>
+        )}
+
+        {watches.length > 0 && (
+          <div className="space-y-2">
+            {watches.map((w) => (
+              <div
+                key={w.id}
+                className="flex items-center justify-between px-3 py-2 rounded
+                           border border-[var(--eve-border)] hover:border-[var(--eve-green)]
+                           transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="w-2 h-2 rounded-full bg-[var(--eve-green)]" />
+                  <div>
+                    <div className="text-xs text-[var(--eve-text)] font-mono">
+                      {w.target_id}
+                    </div>
+                    <div className="text-[10px] text-[var(--eve-dim)]">
+                      <WatchTypeLabel type={w.watch_type} />
+                      {w.webhook_url && ' + webhook'}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => removeWatch(w.target_id)}
+                  className="text-[10px] text-[var(--eve-red)] hover:text-[var(--eve-text)]
+                             transition-colors px-2 py-1"
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
           </div>
         )}
       </div>

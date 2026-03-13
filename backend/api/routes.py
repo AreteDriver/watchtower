@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from backend.analysis.assembly_tracker import get_assembly_stats, get_watcher_assemblies
+from backend.analysis.chain_verify import verify_subscription_on_chain
 from backend.analysis.corp_intel import (
     detect_corp_rivalries,
     get_corp_leaderboard,
@@ -480,6 +481,29 @@ async def get_subscription(wallet_address: str):
             pass
     db = get_db()
     return check_subscription(db, wallet_address)
+
+
+@router.get("/wallet/{address}/subscription/verify")
+async def verify_subscription_chain(address: str):
+    """Verify subscription status directly from on-chain SubscriptionCap objects.
+
+    Supplementary check — queries Sui GraphQL for SubscriptionCap owned by the wallet.
+    No auth required (public chain data). DB remains primary source of truth.
+    """
+    result = await verify_subscription_on_chain(address)
+    if result:
+        return {
+            "has_subscription": True,
+            "tier": result["tier"],
+            "expires_at": result["expires_at"],
+            "source": "chain",
+        }
+    return {
+        "has_subscription": False,
+        "tier": None,
+        "expires_at": None,
+        "source": "chain",
+    }
 
 
 class SubscribeRequest(BaseModel):
