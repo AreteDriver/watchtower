@@ -1,7 +1,7 @@
 """Tests for Stripe webhook handler."""
 
 import sqlite3
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -26,8 +26,9 @@ def client(db):
     ):
         mock_settings.STRIPE_WEBHOOK_SECRET = "whsec_test_secret"
 
-        from backend.api.stripe_webhook import router
         from fastapi import FastAPI
+
+        from backend.api.stripe_webhook import router
 
         app = FastAPI()
         app.include_router(router)
@@ -62,8 +63,9 @@ class TestStripeWebhook:
         ):
             mock_settings.STRIPE_WEBHOOK_SECRET = "whsec_test"
 
-            from backend.api.stripe_webhook import router
             from fastapi import FastAPI
+
+            from backend.api.stripe_webhook import router
 
             app = FastAPI()
             app.include_router(router)
@@ -95,8 +97,9 @@ class TestStripeWebhook:
         ):
             mock_settings.STRIPE_WEBHOOK_SECRET = ""
 
-            from backend.api.stripe_webhook import router
             from fastapi import FastAPI
+
+            from backend.api.stripe_webhook import router
 
             app = FastAPI()
             app.include_router(router)
@@ -121,8 +124,9 @@ class TestStripeWebhook:
         ):
             mock_settings.STRIPE_WEBHOOK_SECRET = "whsec_test"
 
-            from backend.api.stripe_webhook import router
             from fastapi import FastAPI
+
+            from backend.api.stripe_webhook import router
 
             app = FastAPI()
             app.include_router(router)
@@ -151,8 +155,9 @@ class TestStripeWebhook:
         ):
             mock_settings.STRIPE_WEBHOOK_SECRET = "whsec_test"
 
-            from backend.api.stripe_webhook import router
             from fastapi import FastAPI
+
+            from backend.api.stripe_webhook import router
 
             app = FastAPI()
             app.include_router(router)
@@ -180,8 +185,9 @@ class TestStripeWebhook:
         ):
             mock_settings.STRIPE_WEBHOOK_SECRET = "whsec_test"
 
-            from backend.api.stripe_webhook import router
             from fastapi import FastAPI
+
+            from backend.api.stripe_webhook import router
 
             app = FastAPI()
             app.include_router(router)
@@ -208,8 +214,9 @@ class TestStripeWebhook:
         ):
             mock_settings.STRIPE_WEBHOOK_SECRET = "whsec_test"
 
-            from backend.api.stripe_webhook import router
             from fastapi import FastAPI
+
+            from backend.api.stripe_webhook import router
 
             app = FastAPI()
             app.include_router(router)
@@ -232,9 +239,7 @@ class TestStripeWebhook:
             ("oracle", 2),
             ("spymaster", 3),
         ]:
-            event = _make_event(
-                wallet=f"0xWallet_{tier_name}", tier=tier_name
-            )
+            event = _make_event(wallet=f"0xWallet_{tier_name}", tier=tier_name)
             mock_construct.return_value = event
 
             with (
@@ -243,8 +248,9 @@ class TestStripeWebhook:
             ):
                 mock_settings.STRIPE_WEBHOOK_SECRET = "whsec_test"
 
-                from backend.api.stripe_webhook import router
                 from fastapi import FastAPI
+
+                from backend.api.stripe_webhook import router
 
                 app = FastAPI()
                 app.include_router(router)
@@ -272,8 +278,9 @@ class TestStripeWebhook:
         ):
             mock_settings.STRIPE_WEBHOOK_SECRET = "whsec_test"
 
-            from backend.api.stripe_webhook import router
             from fastapi import FastAPI
+
+            from backend.api.stripe_webhook import router
 
             app = FastAPI()
             app.include_router(router)

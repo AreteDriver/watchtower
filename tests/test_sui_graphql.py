@@ -108,7 +108,9 @@ SAMPLE_CHARACTER_EVENT = {
             "character_id": "0x978a73b03801b2a0a79b20012f6f9f69a239fcc14074e5909a9a4ad66c95eecf",
             "key": {"item_id": "2112077429", "tenant": "stillness"},
             "tribe_id": 1000167,
-            "character_address": "0xc4b7d17877d2d6c64423e90a6df24a1a5445d0bf0415a263eb97e069c3120946",
+            "character_address": (
+                "0xc4b7d17877d2d6c64423e90a6df24a1a5445d0bf0415a263eb97e069c3120946"
+            ),
         }
     },
     "timestamp": "2026-03-11T15:33:06.104Z",
@@ -277,7 +279,9 @@ SAMPLE_CHARACTER_OBJECT = {
     "asMoveObject": {
         "contents": {
             "json": {
-                "character_address": "0xc4b7d17877d2d6c64423e90a6df24a1a5445d0bf0415a263eb97e069c3120946",
+                "character_address": (
+                    "0xc4b7d17877d2d6c64423e90a6df24a1a5445d0bf0415a263eb97e069c3120946"
+                ),
                 "key": {"item_id": "2112077429", "tenant": "stillness"},
                 "tribe_id": 1000167,
                 "metadata": {
