@@ -5,6 +5,7 @@ import re
 import time
 from urllib.parse import urlparse
 
+import httpx
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
@@ -64,6 +65,27 @@ _HEALTH_TABLES = ("killmails", "gate_events", "entities", "story_feed", "watches
 _HEALTH_QUERIES = {t: f"SELECT COUNT(*) as cnt FROM {t}" for t in _HEALTH_TABLES}
 
 
+_SUI_GRAPHQL_URL = "https://graphql.testnet.sui.io/graphql"
+_SUI_GRAPHQL_PROBE = '{"query":"{ checkpoint { sequenceNumber } }"}'
+
+
+async def _check_sui_graphql() -> str:
+    """Non-blocking connectivity check to Sui GraphQL endpoint (2s timeout)."""
+    try:
+        async with httpx.AsyncClient() as client:
+            r = await client.post(
+                _SUI_GRAPHQL_URL,
+                content=_SUI_GRAPHQL_PROBE,
+                headers={"Content-Type": "application/json"},
+                timeout=2.0,
+            )
+            if r.status_code == 200:
+                return "ok"
+            return f"http_{r.status_code}"
+    except Exception:
+        return "unreachable"
+
+
 @router.get("/health")
 async def health():
     db = get_db()
@@ -71,7 +93,13 @@ async def health():
     for table, query in _HEALTH_QUERIES.items():
         row = db.execute(query).fetchone()
         counts[table] = row["cnt"]
-    return {"status": "ok", "tables": counts, "timestamp": int(time.time())}
+    sui_graphql = await _check_sui_graphql()
+    return {
+        "status": "ok",
+        "tables": counts,
+        "sui_graphql": sui_graphql,
+        "timestamp": int(time.time()),
+    }
 
 
 @router.get("/entity/{entity_id}")

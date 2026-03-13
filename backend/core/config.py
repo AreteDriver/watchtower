@@ -4,7 +4,10 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    # World API — dynamic endpoint dead (NXDOMAIN since March 11, 2026)
+    # DEPRECATED: Dynamic World API endpoint — NXDOMAIN since March 11, 2026.
+    # CCP migrated all dynamic data to Sui GraphQL. Poller uses graphql.testnet.sui.io now.
+    # Kept for backward compatibility — poll_endpoint() and tribe detail fetch still reference it
+    # but those code paths are dead (never called by the active Sui GraphQL poller).
     WORLD_API_BASE: str = "https://blockchain-gateway-stillness.live.tech.evefrontier.com"
 
     # World API static data (system names, types, constellations)
