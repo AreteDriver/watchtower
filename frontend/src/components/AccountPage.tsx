@@ -6,6 +6,8 @@ import { useAuth, TIER_LABELS } from '../contexts/AuthContext';
 import { api } from '../api';
 import type { WatchData, AlertData, NexusSubscription, NexusDelivery, NexusQuota } from '../api';
 import { usePricing } from '../hooks/usePricing';
+import { useSubscriptionCap } from '../hooks/useSubscriptionCap';
+import { useSubscribe } from '../hooks/useSubscribe';
 
 const WATCHTOWER_PACKAGE = '0x3ca7e3af5bf5b072157d02534f5e4013cf11a12b79385c270d97de480e7b7dca';
 const SUBSCRIPTION_CONFIG = '0x7bd0e266d3c26665b13c432f70d9b7e5ecc266de993094f8ac8290020283be9d';
@@ -51,6 +53,8 @@ export function AccountPage() {
     wallet, subscription, isAdmin, disconnect, refreshSubscription,
   } = useAuth();
   const { pricing, loading: pricingLoading, error: pricingError, refetch: refetchPricing } = usePricing();
+  const { cap: subCap, refetch: refetchCap } = useSubscriptionCap(wallet);
+  const { renew: renewOnChain } = useSubscribe();
   const [watches, setWatches] = useState<WatchData[]>([]);
   const [alerts, setAlerts] = useState<AlertData[]>([]);
   const [loadingWatches, setLoadingWatches] = useState(false);
@@ -108,6 +112,7 @@ export function AccountPage() {
       });
       await signAndExecuteTransaction({ transaction: tx });
       await refreshSubscription();
+      refetchCap();
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Transaction failed';
       setTxError(msg);
@@ -365,9 +370,31 @@ export function AccountPage() {
                                hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
                     style={{ backgroundColor: tierLabel.color, color: 'var(--eve-bg)' }}
                     disabled={subscribing !== null || pricingLoading || !pricing || pricing.is_stale}
-                    onClick={() => handleSubscribe(currentTier)}
+                    onClick={async () => {
+                      const tierKey = TIER_KEYS[currentTier];
+                      if (!pricing || !tierKey || !pricing.tiers[tierKey]) return;
+                      setSubscribing(currentTier);
+                      setTxError('');
+                      try {
+                        if (subCap?.objectId) {
+                          // True on-chain renew via SubscriptionCap
+                          await renewOnChain(subCap.objectId, BigInt(pricing.tiers[tierKey].sui_mist));
+                        } else {
+                          // Fallback: subscribe() extends expiry for existing registry entries
+                          await handleSubscribe(currentTier);
+                          return; // handleSubscribe manages its own state
+                        }
+                        await refreshSubscription();
+                        refetchCap();
+                      } catch (err) {
+                        const msg = err instanceof Error ? err.message : 'Renewal failed';
+                        setTxError(msg);
+                      } finally {
+                        setSubscribing(null);
+                      }
+                    }}
                   >
-                    {subscribing === currentTier ? 'Confirming...' : 'Renew (1 week)'}
+                    {subscribing === currentTier ? 'Confirming...' : `Renew (1 week)`}
                   </button>
                 )}
               </div>

@@ -15,7 +15,7 @@ from backend.core.logger import get_logger
 logger = get_logger("chain_verify")
 
 # Sui GraphQL endpoint (testnet)
-SUI_GRAPHQL_URL = "https://sui-testnet.mystenlabs.com/graphql"
+SUI_GRAPHQL_URL = "https://graphql.testnet.sui.io/graphql"
 
 # WatchTower package ID
 WATCHTOWER_PKG = "0x3ca7e3af5bf5b072157d02534f5e4013cf11a12b79385c270d97de480e7b7dca"
@@ -28,8 +28,8 @@ SUBSCRIPTION_CAP_QUERY = """
 query FetchSubscriptionCaps($owner: SuiAddress!, $type: String!) {
   objects(
     filter: {
-      owner: { equalTo: $owner }
-      type: { equalTo: $type }
+      owner: $owner
+      type: $type
     }
   ) {
     nodes {
