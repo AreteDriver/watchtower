@@ -14,11 +14,11 @@ Chain archaeology + AI intelligence platform. Reads the blockchain → entity do
 
 - **Backend**: FastAPI + SQLite WAL + Pydantic v2 (Python 3.12)
 - **Frontend**: React 19 + Vite + Tailwind CSS v4 (TypeScript strict)
-- **Contracts**: Sui Move (WatcherSystem reputation oracle)
+- **Contracts**: Sui Move (subscription, reputation, titles)
 - **AI**: Anthropic API (narrative generation + token usage tracking)
 - **Bot**: Discord webhooks
 - **Deploy**: Fly.io (backend) + Vercel (frontend)
-- **Tests**: 662 passing, 80%+ coverage (pytest)
+- **Tests**: 700 passing, 80%+ coverage (pytest)
 - **Data sources**: Sui GraphQL (dynamic), World API static (system names)
 
 ### Data Flow
@@ -60,6 +60,11 @@ cd frontend && npx vercel --prod              # deploy frontend
 - All C5 endpoints return `{ cycle: 5, reset_at: "...", data: [...] }` envelope
 - HACKATHON_MODE + HACKATHON_ENDS env vars gate Spymaster-for-all with date-based auto-revert
 - Auth uses challenge-response: `/wallet/challenge` → sign with dapp-kit → `/wallet/connect` verifies Ed25519 sig
+- Frontend uses `useSignPersonalMessage()` from @mysten/dapp-kit for signing
+- Full flow: POST /auth/wallet/challenge → sign with dApp kit → POST /auth/wallet/connect with {wallet_address, signature, message}
+- Backend verifies Ed25519 signature, derives address from Blake2b-256(scheme_byte || public_key)
+- Session persists across refresh via localStorage + /wallet/me verification
+- Session TTL: 7 days, Challenge TTL: 5 minutes
 - Sui signature format: `scheme_byte || raw_sig || public_key` (base64). PersonalMessage intent: `[3,0,0]` + BCS(msg) → Blake2b-256 → Ed25519 verify
 - Address derived from Blake2b-256(scheme_byte || public_key) — must match claimed wallet
 
@@ -121,7 +126,7 @@ witness/
 │   ├── components/    # 28 React components
 │   ├── contexts/      # AuthContext (wallet)
 │   └── hooks/         # useEventStream (SSE)
-├── tests/             # 662 tests
+├── tests/             # 659 tests
 ├── Dockerfile
 ├── fly.toml
 └── frontend/vercel.json
@@ -182,7 +187,7 @@ WatchTower's lane is **uncontested on intelligence depth**. Only submission doin
 | Category | Fit | Strategy |
 |---|---|---|
 | Most Creative | **Primary target** | Chain archaeology + earned titles + "living memory" |
-| Best Technical | Strong | Poller, fingerprint engine, AI pipeline, 523 tests |
+| Best Technical | Strong | Poller, fingerprint engine, AI pipeline, 700 tests |
 | Most Utility | Strong | Entity dossiers, reputation API, story feed |
 | Best Live Integration | Clear path | +10% bonus via April 1–15 deploy window |
 
@@ -199,6 +204,34 @@ Discord `#hackathon-build-requests` that WatchTower already answers:
 
 ---
 
+## Payment System
+
+Hybrid SUI + Stripe + LUX payment architecture. Three payment channels funnel into one `watcher_subscriptions` table via `record_subscription()`.
+
+- **Move contract**: `contracts/sui/sources/subscription.move` — `subscribe()` (SUI), `credit_lux_payment()` (LUX via admin), `grant_subscription()` (comp)
+- **On-chain payment**: "Pay with SUI" buttons use `useSignAndExecuteTransaction` from dApp kit → `watchtower::subscription::subscribe` entry function
+- **Stripe checkout**: `POST /api/checkout/create` creates Stripe Checkout Session → redirects to Stripe → webhook processes payment
+- **Stripe webhook**: `POST /api/webhooks/stripe` — signature verification, tier mapping, `record_subscription()`
+- **DB columns**: `stripe_customer_id`, `stripe_subscription_id`, `payment_channel` on `watcher_subscriptions`
+- **Config**: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` (env prefix `WATCHTOWER_`)
+- **Sui subscription events**: polled via `poll_subscriptions()` in poller
+
+### Sui Contract Objects (Testnet)
+- Package: `0xbc6a9d5e19e1d46a734360ee205c2230693a56dfff782d192638e588fcac0a94`
+- AdminCap (subscription): `0x1077b5ba1b4717307b823cb65d03d3713c4f2d6770441632e248fec4551c4d36`
+- SubscriptionRegistry: `0x4e83950d3500f6cb26b8fb5e89b97ed57d79380850f20e58f293a4a569c4ecca`
+- ReputationRegistry: `0x82c39f363021cff145b6e82dc5aeae169bff5152307d8a5359821639f0518016`
+- TitleRegistry: `0xd05d0a5832e33e774600e7a9eefe7b6be926320f86549c961d43aaa0b95b969a`
+- UpgradeCap: `0xf3e3499d78f79bfc53e6a0c931f1159b75af38dc50ec12a4ba0cb28db407ff23`
+
+---
+
+## NEXUS Scroll Behavior
+
+NexusCard navigates to `/account#nexus`. AccountPage scrolls NEXUS section to center on mount when hash is `#nexus`.
+
+---
+
 ## Aegis Stack
 
 WatchTower is Track 1 of the Aegis Stack — six coordinated hackathon projects:
@@ -206,6 +239,8 @@ WatchTower is Track 1 of the Aegis Stack — six coordinated hackathon projects:
 - **WatchTower** (this) — Chain archaeology + AI intel
 - **Witness Protocol** — NEXUS behavioral reputation marketplace
 - The Black Box, The Sovereign, Silk Road Protocol, The Warden System — supporting infrastructure
+
+WatchTower displays live Monolith Chain Integrity metrics (events, anomalies, critical, high, bug reports) via polling `monolith-evefrontier.fly.dev/api/health` every 60s.
 
 ---
 
@@ -218,6 +253,30 @@ jump_range(T) = 2.21e9 / T^2.613
 System temperature explains ~99% of jump range variance. High-temp systems are harder to reach — activity there signals committed actors, not opportunists. Add to system dossier as "accessibility rating" once World API provides per-system temperature data. Complements CradleOS Route Planner (they use cargo/heat sliders on the same underlying mechanic).
 
 **Blocked on:** World API (temperature per system not available until API returns).
+
+---
+
+## C5 Alert Suppression
+
+Cycle 5 (Shroud of Fear) alert types can be suppressed via env var when stale data causes noise:
+
+```
+WATCHTOWER_C5_ALERT_SUPPRESS="blind_spot,clone_reserve"
+```
+
+Valid types: `feral_evolved`, `hostile_scan`, `blind_spot`, `clone_reserve`. Currently `blind_spot` and `clone_reserve` are suppressed in production (World API dynamic data is dead, tables have stale data).
+
+---
+
+## NEXUS Dispatcher
+
+Full webhook delivery system for builder integrations. Wired into the poller ingestion loop.
+
+- **Schema**: `nexus_subscriptions` + `nexus_deliveries` tables
+- **Dispatcher**: `backend/analysis/nexus.py` — filter matching, HMAC signing, retry with backoff, circuit breaker
+- **Routes**: CRUD at `/api/nexus/*` (subscribe, list, update, delete, deliveries, quota)
+- **Poller wire**: `dispatch_batch()` called after killmail + gate event ingestion
+- **Quotas**: Tier-based (Oracle: 2 subs/100 day, Spymaster: 10 subs/1K day), hackathon mode grants Spymaster
 
 ---
 

@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     DISCORD_TOKEN: str = ""
     DISCORD_WEBHOOK_URL: str = ""
 
+    # Stripe (USD payment path)
+    STRIPE_SECRET_KEY: str = ""
+    STRIPE_WEBHOOK_SECRET: str = ""
+
     # Anthropic (for narrative generation)
     ANTHROPIC_API_KEY: str = ""
 
@@ -41,6 +45,17 @@ class Settings(BaseSettings):
     # Auto-expires after HACKATHON_ENDS date (YYYY-MM-DD)
     HACKATHON_MODE: bool = False
     HACKATHON_ENDS: str = "2026-04-01"
+
+    # C5 alert type filter — comma-separated list of alert types to suppress
+    # Valid types: feral_evolved, hostile_scan, blind_spot, clone_reserve
+    C5_ALERT_SUPPRESS: str = ""
+
+    @property
+    def c5_suppressed_alerts(self) -> set[str]:
+        """Return set of suppressed C5 alert types."""
+        if not self.C5_ALERT_SUPPRESS:
+            return set()
+        return {a.strip().lower() for a in self.C5_ALERT_SUPPRESS.split(",") if a.strip()}
 
     # Warden (autonomous threat intelligence loop)
     WARDEN_ENABLED: bool = True

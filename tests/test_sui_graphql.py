@@ -13,6 +13,7 @@ from backend.ingestion.sui_graphql import (
     transform_characters,
     transform_gate_jumps,
     transform_killmails,
+    transform_subscriptions,
 )
 
 # --- Helpers ---
@@ -41,7 +42,13 @@ def test_item_id_empty():
 
 def test_event_types_contain_package():
     for key, val in EVENT_TYPES.items():
-        assert STILLNESS_PKG in val, f"{key} missing package ID"
+        # subscription events use WatchTower's own package, not Stillness
+        if key == "subscription":
+            from backend.ingestion.sui_graphql import WATCHTOWER_PKG
+
+            assert WATCHTOWER_PKG in val, f"{key} missing WatchTower package ID"
+        else:
+            assert STILLNESS_PKG in val, f"{key} missing package ID"
 
 
 # --- Transform killmails ---
@@ -341,3 +348,82 @@ async def test_bootstrap_only_runs_once(monkeypatch):
     assert len(first) == 1
     assert len(second) == 0  # Already bootstrapped
     assert poller.names_bootstrapped is True
+
+
+# --- Transform subscriptions ---
+
+SAMPLE_SUBSCRIPTION_EVENT = {
+    "contents": {
+        "json": {
+            "subscriber": "0xabc123def456",
+            "tier": 2,
+            "expires_at_ms": 1710864600000,
+            "paid_mist": 2000000000,
+        }
+    },
+    "sender": {"address": "0xabc123def456"},
+}
+
+
+def test_transform_subscriptions_basic():
+    result = transform_subscriptions([SAMPLE_SUBSCRIPTION_EVENT])
+    assert len(result) == 1
+    sub = result[0]
+    assert sub["wallet_address"] == "0xabc123def456"
+    assert sub["tier"] == 2
+    assert sub["expires_at"] == 1710864600  # ms → seconds
+    assert sub["paid_mist"] == 2000000000
+
+
+def test_transform_subscriptions_string_tier():
+    """Tier can be a string from JSON — should be cast to int."""
+    event = {
+        "contents": {
+            "json": {
+                "subscriber": "0xStringTier",
+                "tier": "3",
+                "expires_at_ms": "1710864600000",
+                "paid_mist": 5000000000,
+            }
+        },
+        "sender": {"address": "0xStringTier"},
+    }
+    result = transform_subscriptions([event])
+    assert len(result) == 1
+    assert result[0]["tier"] == 3
+    assert result[0]["expires_at"] == 1710864600
+
+
+def test_transform_subscriptions_empty_events():
+    assert transform_subscriptions([]) == []
+
+
+def test_transform_subscriptions_missing_subscriber():
+    event = {
+        "contents": {
+            "json": {
+                "subscriber": "",
+                "tier": 1,
+                "expires_at_ms": 1710864600000,
+            }
+        }
+    }
+    assert transform_subscriptions([event]) == []
+
+
+def test_transform_subscriptions_missing_contents():
+    event = {"contents": {}}
+    assert transform_subscriptions([event]) == []
+
+
+def test_transform_subscriptions_zero_tier():
+    event = {
+        "contents": {
+            "json": {
+                "subscriber": "0xZeroTier",
+                "tier": 0,
+                "expires_at_ms": 1710864600000,
+            }
+        }
+    }
+    assert transform_subscriptions([event]) == []

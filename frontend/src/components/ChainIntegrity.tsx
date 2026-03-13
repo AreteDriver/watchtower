@@ -79,6 +79,7 @@ export function ChainIntegrity() {
     : '100.0';
   const criticals = stats?.by_severity?.CRITICAL ?? 0;
   const highs = stats?.by_severity?.HIGH ?? 0;
+  const bugReports = health?.row_counts.bug_reports ?? 0;
 
   return (
     <div className="rounded-lg p-4 space-y-3"
@@ -117,7 +118,7 @@ export function ChainIntegrity() {
       </div>
 
       {/* Stats Row */}
-      <div className="grid grid-cols-4 gap-2">
+      <div className="grid grid-cols-5 gap-2">
         <div className="text-center py-1.5 rounded" style={{ background: 'rgba(127, 119, 221, 0.08)' }}>
           <div className="aegis-mono text-sm font-bold text-[var(--eve-text)]">
             {eventsProcessed.toLocaleString()}
@@ -141,6 +142,12 @@ export function ChainIntegrity() {
             {highs}
           </div>
           <div className="text-[9px] text-[var(--eve-dim)] tracking-wider">HIGH</div>
+        </div>
+        <div className="text-center py-1.5 rounded" style={{ background: 'rgba(127, 119, 221, 0.08)' }}>
+          <div className={`aegis-mono text-sm font-bold ${bugReports > 0 ? 'text-[#22c55e]' : 'text-[var(--eve-text)]'}`}>
+            {bugReports}
+          </div>
+          <div className="text-[9px] text-[var(--eve-dim)] tracking-wider">BUG REPORTS</div>
         </div>
       </div>
 

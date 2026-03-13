@@ -12,6 +12,7 @@ Commands:
   /unwatch          — Remove a standing watch
   /profile <id>     — Full behavioral fingerprint
   /opsec <id>       — OPSEC score analysis
+  /nexus            — NEXUS Builder Webhook API info
 """
 
 from __future__ import annotations
@@ -741,6 +742,76 @@ def _register_commands(
         )
         embed.set_footer(text="WatchTower Oracle — Counter-Intelligence Analysis")
         await interaction.followup.send(embed=embed)
+
+    # ---- /nexus ----
+
+    @tree.command(
+        name="nexus",
+        description="NEXUS Builder Webhook API — info and signup link",
+    )
+    async def nexus_cmd(interaction: discord.Interaction) -> None:
+        embed = discord.Embed(
+            title="NEXUS — Builder Webhook API",
+            description=(
+                "Subscribe to enriched event webhooks from WatchTower.\n\n"
+                "When on-chain events match your filters, WatchTower POSTs "
+                "HMAC-signed payloads to your endpoint with resolved names, "
+                "system data, and intelligence enrichment."
+            ),
+            color=0x3B82F6,
+        )
+        embed.add_field(
+            name="Events",
+            value="Killmails, Gate Transits",
+            inline=True,
+        )
+        embed.add_field(
+            name="Filters",
+            value="Entity, System, Type, Severity",
+            inline=True,
+        )
+        embed.add_field(
+            name="Security",
+            value="HMAC-SHA256 signed payloads",
+            inline=True,
+        )
+        embed.add_field(
+            name="Hackathon Access",
+            value=(
+                "**All participants get Spymaster-tier access free during the hackathon:**\n"
+                "- 10 webhook subscriptions\n"
+                "- 1,000 deliveries/day\n"
+                "- Full filter control\n\n"
+                "After hackathon ends, access reverts to subscription-based tiers."
+            ),
+            inline=False,
+        )
+        embed.add_field(
+            name="Example Payload",
+            value=(
+                "```json\n"
+                '{"event_type": "killmail",\n'
+                ' "victim_name": "PilotAlpha",\n'
+                ' "solar_system_name": "J-RXYN",\n'
+                ' "_nexus": {"enriched_at": ..., "version": 1}}\n'
+                "```"
+            ),
+            inline=False,
+        )
+        embed.add_field(
+            name="Get Started",
+            value=(
+                "1. Connect wallet at "
+                "[watchtower-evefrontier.vercel.app]"
+                "(https://watchtower-evefrontier.vercel.app/account)\n"
+                "2. Go to Account > NEXUS Webhooks\n"
+                "3. Create a subscription with your endpoint URL\n"
+                "4. Save your HMAC secret (shown once)"
+            ),
+            inline=False,
+        )
+        embed.set_footer(text="WatchTower — The Living Memory of EVE Frontier")
+        await interaction.response.send_message(embed=embed)
 
     # ---- Autocomplete bindings ----
 

@@ -1,8 +1,20 @@
 import { useEffect, useState } from 'react';
-import { ConnectButton } from '@mysten/dapp-kit';
+import { useLocation } from 'react-router';
+import { ConnectButton, useSignAndExecuteTransaction } from '@mysten/dapp-kit';
+import { Transaction } from '@mysten/sui/transactions';
 import { useAuth, TIER_LABELS } from '../contexts/AuthContext';
 import { api } from '../api';
 import type { WatchData, AlertData, NexusSubscription, NexusDelivery, NexusQuota } from '../api';
+
+const WATCHTOWER_PACKAGE = '0xbc6a9d5e19e1d46a734360ee205c2230693a56dfff782d192638e588fcac0a94';
+const SUBSCRIPTION_REGISTRY = '0x4e83950d3500f6cb26b8fb5e89b97ed57d79380850f20e58f293a4a569c4ecca';
+const SUI_CLOCK = '0x6';
+
+const TIER_PRICES_MIST: Record<number, number> = {
+  1: 500_000_000,   // 0.5 SUI
+  2: 2_000_000_000, // 2.0 SUI
+  3: 5_000_000_000, // 5.0 SUI
+};
 
 const TIER_FEATURES: Record<number, string[]> = {
   0: ['Entity search', 'Story feed', 'Leaderboards', 'Kill streaks'],
@@ -56,6 +68,47 @@ export function AccountPage() {
   const [nexusError, setNexusError] = useState('');
   const [showDeliveries, setShowDeliveries] = useState(false);
   const [nexusQuota, setNexusQuota] = useState<NexusQuota | null>(null);
+  const [subscribing, setSubscribing] = useState<number | null>(null);
+  const [txError, setTxError] = useState<string>('');
+  const { mutateAsync: signAndExecuteTransaction } = useSignAndExecuteTransaction();
+  const location = useLocation();
+
+  const handleSubscribe = async (tier: number) => {
+    const price = TIER_PRICES_MIST[tier];
+    if (!price) return;
+    setSubscribing(tier);
+    setTxError('');
+    try {
+      const tx = new Transaction();
+      const [coin] = tx.splitCoins(tx.gas, [price]);
+      tx.moveCall({
+        target: `${WATCHTOWER_PACKAGE}::subscription::subscribe`,
+        arguments: [
+          tx.object(SUBSCRIPTION_REGISTRY),
+          tx.pure.u8(tier),
+          coin,
+          tx.object(SUI_CLOCK),
+        ],
+      });
+      await signAndExecuteTransaction({ transaction: tx });
+      await refreshSubscription();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Transaction failed';
+      setTxError(msg);
+    } finally {
+      setSubscribing(null);
+    }
+  };
+
+  // Scroll to #nexus when navigating from NexusCard
+  useEffect(() => {
+    if (location.hash === '#nexus') {
+      const el = document.getElementById('nexus');
+      if (el) {
+        setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
+      }
+    }
+  }, [location.hash]);
 
   useEffect(() => {
     if (!wallet) return;
@@ -176,9 +229,136 @@ export function AccountPage() {
   // Connected state
   const currentTier = subscription?.tier ?? 0;
   const tierLabel = TIER_LABELS[currentTier] || TIER_LABELS[0];
+  const isHackathonMode = currentTier >= 3 && subscription?.active;
+
+  const SUBSCRIPTION_TIERS = [
+    {
+      name: 'Scout',
+      tier: 1,
+      suiPrice: '0.5 SUI / week',
+      fiatPrice: '$4.99/mo',
+      color: 'var(--eve-blue)',
+      features: TIER_FEATURES[1],
+    },
+    {
+      name: 'Oracle',
+      tier: 2,
+      suiPrice: '2.0 SUI / week',
+      fiatPrice: '$9.99/mo',
+      color: 'var(--eve-green)',
+      features: TIER_FEATURES[2],
+      popular: true,
+    },
+    {
+      name: 'Spymaster',
+      tier: 3,
+      suiPrice: '5.0 SUI / week',
+      fiatPrice: '$19.99/mo',
+      color: 'var(--eve-orange)',
+      features: TIER_FEATURES[3],
+    },
+  ];
 
   return (
     <div className="space-y-6">
+      {/* Hackathon Mode Banner */}
+      {isHackathonMode && (
+        <div className="bg-[var(--eve-surface)] border border-[var(--eve-orange)] rounded-lg p-4 text-center space-y-1">
+          <div className="text-sm font-bold text-[var(--eve-orange)] uppercase tracking-wider">
+            Hackathon Mode Active
+          </div>
+          <p className="text-xs text-[var(--eve-dim)]">
+            All tiers unlocked during hackathon — subscribe now to lock in access post-hackathon
+          </p>
+        </div>
+      )}
+
+      {/* Subscribe */}
+      <div className="bg-[var(--eve-surface)] border border-[var(--eve-border)] rounded-lg p-5 space-y-4">
+        <h3 className="text-sm font-bold text-[var(--eve-green)] uppercase tracking-wider">
+          Subscribe
+        </h3>
+        <p className="text-xs text-[var(--eve-dim)]">
+          Unlock deeper intelligence with a WatchTower subscription. Pay on-chain with SUI or by card.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {txError && (
+            <div className="col-span-full text-xs text-[var(--eve-red)] bg-[var(--eve-bg)] border border-[var(--eve-red)] rounded p-2 mb-2">
+              {txError}
+            </div>
+          )}
+          {SUBSCRIPTION_TIERS.map((plan) => {
+            const isCurrentOrBelow = plan.tier <= currentTier;
+            return (
+              <div
+                key={plan.name}
+                className={`relative border rounded-lg p-4 space-y-3 transition-opacity ${
+                  isCurrentOrBelow ? 'opacity-50' : ''
+                }`}
+                style={{ borderColor: plan.color }}
+              >
+                {plan.popular && (
+                  <div
+                    className="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[10px] font-bold uppercase
+                               px-2 py-0.5 rounded"
+                    style={{ backgroundColor: plan.color, color: 'var(--eve-bg)' }}
+                  >
+                    Popular
+                  </div>
+                )}
+                <div className="text-center space-y-1">
+                  <div className="text-xs font-bold uppercase" style={{ color: plan.color }}>
+                    {plan.name}
+                  </div>
+                  <div className="text-lg font-bold text-[var(--eve-text)]">{plan.suiPrice}</div>
+                  <div className="text-[10px] text-[var(--eve-dim)]">~{plan.fiatPrice} equivalent</div>
+                </div>
+                <ul className="text-[10px] text-[var(--eve-dim)] space-y-0.5">
+                  {plan.features.map((f) => (
+                    <li key={f}>+ {f}</li>
+                  ))}
+                </ul>
+                {isCurrentOrBelow ? (
+                  <div
+                    className="w-full text-center px-3 py-1.5 text-xs font-bold rounded border"
+                    style={{ borderColor: plan.color, color: plan.color }}
+                  >
+                    {plan.tier === currentTier ? 'Current Tier' : 'Included'}
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <button
+                      className="w-full px-3 py-1.5 text-xs font-bold rounded transition-opacity
+                                 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                      style={{ backgroundColor: plan.color, color: 'var(--eve-bg)' }}
+                      disabled={subscribing !== null}
+                      onClick={() => handleSubscribe(plan.tier)}
+                    >
+                      {subscribing === plan.tier ? 'Confirming...' : 'Pay with SUI'}
+                    </button>
+                    <button
+                      className="w-full px-3 py-1.5 text-xs font-bold rounded border
+                                 transition-colors hover:text-[var(--eve-text)]"
+                      style={{ borderColor: plan.color, color: 'var(--eve-dim)' }}
+                      onClick={async () => {
+                        try {
+                          const { url } = await api.createCheckout(plan.tier);
+                          window.location.href = url;
+                        } catch {
+                          alert('Failed to start checkout. Please try again.');
+                        }
+                      }}
+                    >
+                      Pay with Card
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Wallet & Subscription */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Wallet Card */}
@@ -286,6 +466,17 @@ export function AccountPage() {
           >
             Refresh Status
           </button>
+
+          {currentTier >= 2 && (
+            <button
+              onClick={() => document.getElementById('nexus')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+              className="w-full px-3 py-1.5 text-xs font-bold border border-[var(--eve-blue,#3B82F6)]
+                         text-[var(--eve-blue,#3B82F6)] rounded hover:bg-[var(--eve-blue,#3B82F6)]
+                         hover:text-[var(--eve-bg)] transition-colors"
+            >
+              Set Up NEXUS Webhooks
+            </button>
+          )}
         </div>
       </div>
 
@@ -389,7 +580,7 @@ export function AccountPage() {
       </div>
 
       {/* NEXUS Subscriptions */}
-      <div className="bg-[var(--eve-surface)] border border-[var(--eve-blue,#3B82F6)] rounded-lg p-5 space-y-4">
+      <div id="nexus" className="bg-[var(--eve-surface)] border border-[var(--eve-blue,#3B82F6)] rounded-lg p-5 space-y-4">
         <div className="flex justify-between items-center">
           <h3 className="text-sm font-bold text-[var(--eve-blue,#3B82F6)] uppercase tracking-wider">
             NEXUS Webhooks
@@ -423,8 +614,8 @@ export function AccountPage() {
           </div>
         )}
 
-        {/* Tier gate message */}
-        {currentTier < 2 && (
+        {/* Tier gate message — hidden when quota allows access (hackathon mode) */}
+        {nexusQuota && nexusQuota.subscriptions_max === 0 && (
           <div className="border border-[var(--eve-orange,#FF6600)] rounded p-3 text-center space-y-1">
             <div className="text-xs font-bold text-[var(--eve-orange,#FF6600)]">
               Oracle Tier Required
@@ -495,19 +686,19 @@ export function AccountPage() {
         )}
 
         {/* Create new subscription */}
-        {currentTier >= 2 && !showNexusForm ? (
+        {nexusQuota && nexusQuota.subscriptions_max > 0 && !showNexusForm ? (
           <button
             onClick={() => setShowNexusForm(true)}
-            disabled={nexusQuota !== null && nexusQuota.subscriptions_used >= nexusQuota.subscriptions_max}
+            disabled={nexusQuota.subscriptions_used >= nexusQuota.subscriptions_max}
             className="w-full px-3 py-1.5 text-xs font-bold border border-[var(--eve-blue,#3B82F6)]
                        text-[var(--eve-blue,#3B82F6)] rounded hover:bg-[var(--eve-blue,#3B82F6)]
                        hover:text-[var(--eve-bg)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            {nexusQuota && nexusQuota.subscriptions_used >= nexusQuota.subscriptions_max
+            {nexusQuota.subscriptions_used >= nexusQuota.subscriptions_max
               ? `Limit Reached (${nexusQuota.subscriptions_used}/${nexusQuota.subscriptions_max})`
               : '+ New Subscription'}
           </button>
-        ) : (
+        ) : showNexusForm ? (
           <div className="border border-[var(--eve-border)] rounded p-3 space-y-3">
             <div className="text-[10px] font-bold text-[var(--eve-blue,#3B82F6)] uppercase">
               New NEXUS Subscription
@@ -580,7 +771,7 @@ export function AccountPage() {
               </button>
             </div>
           </div>
-        )}
+        ) : null}
 
         {/* Active subscriptions */}
         {nexusLoading && (

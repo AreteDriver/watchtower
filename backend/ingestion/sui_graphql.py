@@ -21,13 +21,21 @@ SUI_GRAPHQL_URL = "https://graphql.testnet.sui.io/graphql"
 # Stillness world-contract package ID
 STILLNESS_PKG = "0x28b497559d65ab320d9da4613bf2498d5946b2c0ae3597ccfda3072ce127448c"
 
+# WatchTower package ID (our deployed contracts)
+WATCHTOWER_PKG = "0xbc6a9d5e19e1d46a734360ee205c2230693a56dfff782d192638e588fcac0a94"
+
 # Event type templates
 EVENT_TYPES = {
     "killmail": f"{STILLNESS_PKG}::killmail::KillmailCreatedEvent",
     "character": f"{STILLNESS_PKG}::character::CharacterCreatedEvent",
     "assembly": f"{STILLNESS_PKG}::assembly::AssemblyCreatedEvent",
     "jump": f"{STILLNESS_PKG}::gate::JumpEvent",
+    # 2-step gate permits — event names are best-guess based on CCP patterns.
+    # May need adjustment when CCP finalizes the permit mechanic on-chain.
+    "permit_issued": f"{STILLNESS_PKG}::gate::PermitIssuedEvent",
+    "permit_consumed": f"{STILLNESS_PKG}::gate::PermitConsumedEvent",
     "location": f"{STILLNESS_PKG}::location::LocationRevealedEvent",
+    "subscription": f"{WATCHTOWER_PKG}::subscription::SubscriptionPurchased",
 }
 
 # GraphQL query template for paginated event fetching
@@ -297,6 +305,45 @@ def transform_gate_jumps(events: list[dict]) -> list[dict]:
     return results
 
 
+def transform_gate_permits(events: list[dict], status: str) -> list[dict]:
+    """Transform Sui PermitIssuedEvent / PermitConsumedEvent → gate permit dicts.
+
+    Args:
+        events: Raw Sui event nodes.
+        status: "issued" or "consumed" — indicates which event type these are.
+
+    Returns list of dicts with:
+        permit_id, gate_id, character_id, solar_system_id, timestamp, permit_status
+    """
+    results = []
+    for event in events:
+        json_data = event.get("contents", {}).get("json", {})
+        if not json_data:
+            continue
+
+        permit_id = _item_id(json_data.get("permit_id", json_data.get("key", {})))
+        gate_id = _item_id(json_data.get("gate_id", {}))
+        character_id = _item_id(json_data.get("character_id", json_data.get("jumper_id", {})))
+        solar_system_id = _item_id(json_data.get("solar_system_id", {}))
+        timestamp = _parse_sui_timestamp(event.get("timestamp", ""))
+
+        if not permit_id:
+            continue
+
+        results.append(
+            {
+                "permit_id": permit_id,
+                "gate_id": gate_id,
+                "character_id": character_id,
+                "solar_system_id": solar_system_id,
+                "timestamp": timestamp,
+                "permit_status": status,
+            }
+        )
+
+    return results
+
+
 def transform_location_reveals(events: list[dict]) -> list[dict]:
     """Transform Sui LocationRevealedEvent → assembly location updates.
 
@@ -325,6 +372,52 @@ def transform_location_reveals(events: list[dict]) -> list[dict]:
                     "z": z,
                 }
             )
+
+    return results
+
+
+def transform_subscriptions(events: list[dict]) -> list[dict]:
+    """Transform Sui SubscriptionPurchased events → subscription records.
+
+    Event shape (from subscription.move):
+    {
+        "subscriber": "0xabc...",
+        "tier": 2,
+        "expires_at_ms": 1710864600000,
+        "paid_mist": 2000000000
+    }
+    """
+    results = []
+    for event in events:
+        json_data = event.get("contents", {}).get("json", {})
+        if not json_data:
+            continue
+
+        subscriber = json_data.get("subscriber", "")
+        tier = json_data.get("tier", 0)
+        expires_at_ms = json_data.get("expires_at_ms", 0)
+
+        if not subscriber or not tier:
+            continue
+
+        try:
+            tier = int(tier)
+            expires_at_ms = int(expires_at_ms)
+        except (ValueError, TypeError):
+            continue
+
+        # Convert ms to seconds for backend
+        expires_at = expires_at_ms // 1000
+
+        results.append(
+            {
+                "wallet_address": subscriber,
+                "tier": tier,
+                "expires_at": expires_at,
+                "paid_mist": json_data.get("paid_mist", 0),
+                "_sui_sender": event.get("sender", {}).get("address", ""),
+            }
+        )
 
     return results
 
@@ -441,7 +534,10 @@ class SuiGraphQLPoller:
             "character": None,
             "assembly": None,
             "jump": None,
+            "permit_issued": None,
+            "permit_consumed": None,
             "location": None,
+            "subscription": None,
         }
         self.names_bootstrapped = False
 
@@ -489,6 +585,32 @@ class SuiGraphQLPoller:
             self.cursors["jump"] = cursor
         return transform_gate_jumps(events)
 
+    async def poll_gate_permits(self, client: httpx.AsyncClient) -> list[dict]:
+        """Fetch new gate permit events (issued + consumed) since last cursors.
+
+        Returns combined list with permit_status='issued' or 'consumed'.
+        Safe to call even if event types don't exist on-chain yet (returns empty).
+        """
+        # Fetch both event types in parallel
+        issued_events, issued_cursor = await fetch_events(
+            client,
+            EVENT_TYPES["permit_issued"],
+            after_cursor=self.cursors["permit_issued"],
+        )
+        consumed_events, consumed_cursor = await fetch_events(
+            client,
+            EVENT_TYPES["permit_consumed"],
+            after_cursor=self.cursors["permit_consumed"],
+        )
+        if issued_cursor:
+            self.cursors["permit_issued"] = issued_cursor
+        if consumed_cursor:
+            self.cursors["permit_consumed"] = consumed_cursor
+
+        permits = transform_gate_permits(issued_events, "issued")
+        permits.extend(transform_gate_permits(consumed_events, "consumed"))
+        return permits
+
     async def poll_locations(self, client: httpx.AsyncClient) -> list[dict]:
         """Fetch new location reveal events since last cursor."""
         events, cursor = await fetch_events(
@@ -499,6 +621,17 @@ class SuiGraphQLPoller:
         if cursor:
             self.cursors["location"] = cursor
         return transform_location_reveals(events)
+
+    async def poll_subscriptions(self, client: httpx.AsyncClient) -> list[dict]:
+        """Fetch new subscription purchase events since last cursor."""
+        events, cursor = await fetch_events(
+            client,
+            EVENT_TYPES["subscription"],
+            after_cursor=self.cursors["subscription"],
+        )
+        if cursor:
+            self.cursors["subscription"] = cursor
+        return transform_subscriptions(events)
 
     async def bootstrap_character_names(self, client: httpx.AsyncClient) -> list[dict]:
         """One-time bulk fetch of all character names from on-chain objects.

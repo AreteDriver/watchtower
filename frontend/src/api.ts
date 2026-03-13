@@ -491,8 +491,14 @@ export const api = {
     postJson<{ status: string }>(`/alerts/${alertId}/read`, {}),
 
   // Wallet auth
-  walletConnect: (walletAddress: string) =>
-    postJson<WalletConnectResponse>('/auth/wallet/connect', { wallet_address: walletAddress }),
+  walletChallenge: () =>
+    postJson<{ nonce: string; message: string }>('/auth/wallet/challenge', {}),
+  walletConnect: (walletAddress: string, signature: string, message: string) =>
+    postJson<WalletConnectResponse>('/auth/wallet/connect', {
+      wallet_address: walletAddress,
+      signature,
+      message,
+    }),
   walletMe: () =>
     fetchJson<WalletMeResponse>('/auth/wallet/me'),
   walletDisconnect: () =>
@@ -538,6 +544,10 @@ export const api = {
   // System dossier
   systemDossier: (systemId: string) =>
     fetchJson<SystemDossier>(`/system/${systemId}`),
+
+  // Stripe checkout
+  createCheckout: (tier: number) =>
+    postJson<{ url: string }>('/checkout/create', { tier }),
 
   // NEXUS
   nexusQuota: () => fetchJson<NexusQuota>('/nexus/quota'),

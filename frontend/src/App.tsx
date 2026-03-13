@@ -32,6 +32,7 @@ import { AdminAnalytics } from './components/AdminAnalytics';
 import { SystemDossier } from './components/SystemDossier';
 import { TitleCard } from './components/TitleCard';
 import { AegisEcosystem } from './components/AegisEcosystem';
+import { NexusCard } from './components/NexusCard';
 import { useAuth } from './contexts/AuthContext';
 
 type Tab = 'intel' | 'tactical' | 'c5' | 'compare' | 'feed' | 'account' | 'admin';
@@ -216,7 +217,7 @@ function Dashboard() {
                   Every action on the blockchain leaves a trace. WatchTower reads them all.
                 </div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <ErrorBoundary>
                   <div className="bg-[var(--eve-surface)] border border-[var(--eve-border)] rounded-lg p-4">
                     <StoryFeed />
@@ -226,6 +227,9 @@ function Dashboard() {
                   <div className="bg-[var(--eve-surface)] border border-[var(--eve-border)] rounded-lg p-4">
                     <HotzoneMap />
                   </div>
+                </ErrorBoundary>
+                <ErrorBoundary>
+                  <NexusCard />
                 </ErrorBoundary>
               </div>
             </div>

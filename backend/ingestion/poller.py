@@ -319,6 +319,61 @@ def _ingest_gate_events(db, events: list[dict]) -> int:
     return count
 
 
+def _ingest_gate_permits(db, permits: list[dict]) -> int:
+    """Ingest 2-step gate permit events.
+
+    For "issued" permits: INSERT with status='issued', set issued_at.
+    For "consumed" permits: UPDATE existing permit to status='consumed', set consumed_at.
+    Falls back to INSERT if no matching issued permit exists.
+    Returns count of new/updated records.
+    """
+    count = 0
+    for raw in permits:
+        permit_id = raw.get("permit_id", "")
+        if not permit_id:
+            continue
+
+        status = raw.get("permit_status", "issued")
+        timestamp = raw.get("timestamp", 0)
+        if not timestamp:
+            timestamp = int(time.time())
+
+        try:
+            if status == "consumed":
+                # Try to update an existing issued permit first
+                cursor = db.execute(
+                    """UPDATE gate_permits
+                       SET status = 'consumed', consumed_at = ?
+                       WHERE permit_id = ? AND status = 'issued'""",
+                    (timestamp, str(permit_id)),
+                )
+                if cursor.rowcount > 0:
+                    count += 1
+                    continue
+                # No matching issued permit — insert consumed directly
+                # (may have missed the issued event)
+
+            db.execute(
+                """INSERT OR IGNORE INTO gate_permits
+                   (permit_id, gate_id, character_id, solar_system_id,
+                    status, issued_at, consumed_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    str(permit_id),
+                    str(raw.get("gate_id", "")),
+                    str(raw.get("character_id", "")),
+                    str(raw.get("solar_system_id", "")),
+                    status,
+                    timestamp if status == "issued" else None,
+                    timestamp if status == "consumed" else None,
+                ),
+            )
+            count += 1
+        except Exception as e:
+            logger.error("Gate permit ingest error: %s", e)
+    return count
+
+
 def _ingest_subscriptions(db, assemblies: list[dict]) -> int:
     """Extract subscription events from assembly interactions.
 
@@ -966,25 +1021,34 @@ async def run_poller() -> None:
                 kill_task = sui.poll_killmails(client)
                 assembly_task = sui.poll_assemblies(client)
                 jump_task = sui.poll_gate_jumps(client)
+                permit_task = sui.poll_gate_permits(client)
                 location_task = sui.poll_locations(client)
-                raw_kills, raw_assemblies, raw_jumps, raw_locations = await asyncio.gather(
-                    kill_task, assembly_task, jump_task, location_task
+                (
+                    raw_kills,
+                    raw_assemblies,
+                    raw_jumps,
+                    raw_permits,
+                    raw_locations,
+                ) = await asyncio.gather(
+                    kill_task, assembly_task, jump_task, permit_task, location_task
                 )
 
                 db = get_db()
                 new_kills = _ingest_killmails(db, raw_kills)
                 new_assemblies = _ingest_smart_assemblies(db, raw_assemblies)
                 new_jumps = _ingest_gate_events(db, raw_jumps)
+                new_permits = _ingest_gate_permits(db, raw_permits)
                 new_locs = _update_assembly_locations(db, raw_locations)
 
-                if new_kills or new_assemblies or new_jumps or new_locs:
+                if new_kills or new_assemblies or new_jumps or new_permits or new_locs:
                     _update_entities(db)
                     db.commit()
                     logger.info(
-                        "Sui ingested: %d kills, %d assemblies, %d jumps, %d locs",
+                        "Sui ingested: %d kills, %d assemblies, %d jumps, %d permits, %d locs",
                         new_kills,
                         new_assemblies,
                         new_jumps,
+                        new_permits,
                         new_locs,
                     )
                     # Publish to SSE event bus
@@ -1033,6 +1097,19 @@ async def run_poller() -> None:
                                     "character_id": str(jump.get("characterId", "")),
                                     "solar_system_id": str(jump.get("solarSystemId", "")),
                                     "timestamp": jump.get("timestamp", 0),
+                                    "severity": "info",
+                                }
+                            )
+                        for permit in raw_permits:
+                            nexus_events.append(
+                                {
+                                    "event_type": "gate_permit",
+                                    "permit_id": permit.get("permit_id", ""),
+                                    "gate_id": permit.get("gate_id", ""),
+                                    "character_id": str(permit.get("character_id", "")),
+                                    "solar_system_id": str(permit.get("solar_system_id", "")),
+                                    "permit_status": permit.get("permit_status", ""),
+                                    "timestamp": permit.get("timestamp", 0),
                                     "severity": "info",
                                 }
                             )
@@ -1089,6 +1166,36 @@ async def run_poller() -> None:
                             )
             except Exception as e:
                 logger.error("Reference data poll error (continuing): %s", e)
+
+            # === On-chain subscription payments (SUI/LUX) ===
+            try:
+                raw_subs = await sui.poll_subscriptions(client)
+                if raw_subs:
+                    sub_db = get_db()
+                    for sub_event in raw_subs:
+                        wallet = sub_event.get("wallet_address", "")
+                        tier = sub_event.get("tier", 0)
+                        expires_at = sub_event.get("expires_at", 0)
+                        if wallet and tier and expires_at:
+                            sub_db.execute(
+                                """INSERT INTO watcher_subscriptions
+                                   (wallet_address, tier, expires_at, created_at)
+                                   VALUES (?, ?, ?, unixepoch())
+                                   ON CONFLICT(wallet_address) DO UPDATE SET
+                                       tier = MAX(watcher_subscriptions.tier, excluded.tier),
+                                       expires_at = MAX(
+                                           watcher_subscriptions.expires_at,
+                                           excluded.expires_at
+                                       )""",
+                                (wallet.lower(), tier, expires_at),
+                            )
+                    sub_db.commit()
+                    logger.info(
+                        "On-chain subscriptions: %d events indexed",
+                        len(raw_subs),
+                    )
+            except Exception as e:
+                logger.error("Subscription poll error (continuing): %s", e)
 
             # === Periodic name re-bootstrap (every 100 cycles ~50 min) ===
             # Catches new players who joined after initial bootstrap

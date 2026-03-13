@@ -130,6 +130,9 @@ CREATE TABLE IF NOT EXISTS watcher_subscriptions (
     wallet_address TEXT PRIMARY KEY,
     tier INTEGER NOT NULL DEFAULT 0,
     expires_at INTEGER NOT NULL DEFAULT 0,
+    stripe_customer_id TEXT DEFAULT '',
+    stripe_subscription_id TEXT DEFAULT '',
+    payment_channel TEXT DEFAULT '',
     created_at INTEGER DEFAULT (unixepoch())
 );
 
@@ -293,6 +296,24 @@ CREATE TABLE IF NOT EXISTS crowns (
     ingested_at INTEGER DEFAULT (unixepoch())
 );
 
+-- 2-step gate permits (issued → consumed)
+CREATE TABLE IF NOT EXISTS gate_permits (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    permit_id TEXT NOT NULL,
+    gate_id TEXT NOT NULL,
+    character_id TEXT,
+    solar_system_id TEXT,
+    status TEXT NOT NULL DEFAULT 'issued',
+    issued_at INTEGER,
+    consumed_at INTEGER,
+    cycle INTEGER DEFAULT 5,
+    ingested_at INTEGER DEFAULT (unixepoch())
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_gate_permits_id ON gate_permits(permit_id, status);
+CREATE INDEX IF NOT EXISTS idx_gate_permits_gate ON gate_permits(gate_id, issued_at DESC);
+CREATE INDEX IF NOT EXISTS idx_gate_permits_character ON gate_permits(character_id);
+
 -- Solar system name lookup (from World API static data)
 CREATE TABLE IF NOT EXISTS solar_systems (
     solar_system_id TEXT PRIMARY KEY,
@@ -373,6 +394,9 @@ MIGRATIONS = [
     "ALTER TABLE killmails ADD COLUMN cycle INTEGER DEFAULT 5",
     "ALTER TABLE gate_events ADD COLUMN cycle INTEGER DEFAULT 5",
     "ALTER TABLE nexus_subscriptions ADD COLUMN wallet_address TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE watcher_subscriptions ADD COLUMN stripe_customer_id TEXT DEFAULT ''",
+    "ALTER TABLE watcher_subscriptions ADD COLUMN stripe_subscription_id TEXT DEFAULT ''",
+    "ALTER TABLE watcher_subscriptions ADD COLUMN payment_channel TEXT DEFAULT ''",
 ]
 
 _connection: sqlite3.Connection | None = None

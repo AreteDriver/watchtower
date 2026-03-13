@@ -219,16 +219,20 @@ async def check_c5_alerts() -> int:
     if not webhook_url:
         return 0
 
+    suppressed = settings.c5_suppressed_alerts
     fired = 0
 
     # 1. Feral AI Evolved — tier increased in recent events
-    recent_evolutions = db.execute(
-        """SELECT zone_id, new_tier, timestamp
+    if "feral_evolved" in suppressed:
+        recent_evolutions = []
+    else:
+        recent_evolutions = db.execute(
+            """SELECT zone_id, new_tier, timestamp
            FROM feral_ai_events
            WHERE event_type = 'evolution' AND timestamp > ?
            ORDER BY timestamp DESC LIMIT 10""",
-        (now - COOLDOWN_SECONDS,),
-    ).fetchall()
+            (now - COOLDOWN_SECONDS,),
+        ).fetchall()
 
     for evt in recent_evolutions:
         key = f"feral_evolved_{evt['zone_id']}"
@@ -256,12 +260,15 @@ async def check_c5_alerts() -> int:
         fired += 1
 
     # 2. Hostile Scan — HOSTILE result in recent scans
-    hostile_scans = db.execute(
-        """SELECT scan_id, zone_id, scanner_name, scanned_at
-           FROM scans WHERE result_type = 'HOSTILE' AND scanned_at > ?
-           ORDER BY scanned_at DESC LIMIT 10""",
-        (now - COOLDOWN_SECONDS,),
-    ).fetchall()
+    if "hostile_scan" in suppressed:
+        hostile_scans = []
+    else:
+        hostile_scans = db.execute(
+            """SELECT scan_id, zone_id, scanner_name, scanned_at
+               FROM scans WHERE result_type = 'HOSTILE' AND scanned_at > ?
+               ORDER BY scanned_at DESC LIMIT 10""",
+            (now - COOLDOWN_SECONDS,),
+        ).fetchall()
 
     for scan in hostile_scans:
         key = f"hostile_scan_{scan['zone_id']}"
@@ -284,12 +291,15 @@ async def check_c5_alerts() -> int:
         fired += 1
 
     # 3. Blind Spot — zones not scanned in >20 min
-    blind_zones = db.execute(
-        """SELECT zone_id, name, last_scanned
-           FROM orbital_zones
-           WHERE last_scanned IS NOT NULL AND last_scanned < ?""",
-        (now - BLIND_SPOT_THRESHOLD,),
-    ).fetchall()
+    if "blind_spot" in suppressed:
+        blind_zones = []
+    else:
+        blind_zones = db.execute(
+            """SELECT zone_id, name, last_scanned
+               FROM orbital_zones
+               WHERE last_scanned IS NOT NULL AND last_scanned < ?""",
+            (now - BLIND_SPOT_THRESHOLD,),
+        ).fetchall()
 
     for zone in blind_zones:
         key = f"blind_spot_{zone['zone_id']}"
@@ -306,13 +316,16 @@ async def check_c5_alerts() -> int:
         fired += 1
 
     # 4. Clone Reserve Low — active clones below threshold per owner
-    low_reserve = db.execute(
-        """SELECT owner_id, owner_name, COUNT(*) as active_count
-           FROM clones WHERE status = 'active'
-           GROUP BY owner_id
-           HAVING active_count < ?""",
-        (CLONE_RESERVE_THRESHOLD,),
-    ).fetchall()
+    if "clone_reserve" in suppressed:
+        low_reserve = []
+    else:
+        low_reserve = db.execute(
+            """SELECT owner_id, owner_name, COUNT(*) as active_count
+               FROM clones WHERE status = 'active'
+               GROUP BY owner_id
+               HAVING active_count < ?""",
+            (CLONE_RESERVE_THRESHOLD,),
+        ).fetchall()
 
     for owner in low_reserve:
         key = f"clone_low_{owner['owner_id']}"

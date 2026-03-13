@@ -2,13 +2,18 @@
 
 import json
 import sqlite3
+import time
+from unittest.mock import patch
 
 import pytest
 
 from backend.analysis.nexus import (
     TIER_LIMITS,
+    _is_hackathon_active,
+    check_subscription_quota,
     generate_api_key,
     generate_secret,
+    get_quota_usage,
     match_filters,
     sign_payload,
 )
@@ -28,6 +33,7 @@ def nexus_db(tmp_path):
             filters TEXT NOT NULL DEFAULT '{}',
             active INTEGER DEFAULT 1,
             secret TEXT NOT NULL,
+            wallet_address TEXT NOT NULL DEFAULT '',
             delivery_count INTEGER DEFAULT 0,
             last_delivered_at INTEGER,
             created_at INTEGER DEFAULT (strftime('%s', 'now'))
@@ -59,6 +65,11 @@ def nexus_db(tmp_path):
         CREATE TABLE solar_systems (
             solar_system_id TEXT PRIMARY KEY,
             name TEXT NOT NULL
+        );
+        CREATE TABLE watcher_subscriptions (
+            wallet_address TEXT PRIMARY KEY,
+            tier INTEGER NOT NULL DEFAULT 0,
+            expires_at INTEGER NOT NULL DEFAULT 0
         );
     """)
     return db
@@ -189,3 +200,74 @@ def test_tier_limits_spymaster_highest():
     assert TIER_LIMITS[3]["max_subscriptions"] == 10
     assert TIER_LIMITS[3]["max_deliveries_day"] == 1000
     assert TIER_LIMITS[3]["max_subscriptions"] > TIER_LIMITS[2]["max_subscriptions"]
+
+
+# -- Hackathon mode --
+
+
+@patch("backend.analysis.nexus.settings")
+def test_hackathon_mode_active(mock_settings):
+    mock_settings.HACKATHON_MODE = True
+    mock_settings.HACKATHON_ENDS = "2099-12-31"
+    assert _is_hackathon_active() is True
+
+
+@patch("backend.analysis.nexus.settings")
+def test_hackathon_mode_expired(mock_settings):
+    mock_settings.HACKATHON_MODE = True
+    mock_settings.HACKATHON_ENDS = "2020-01-01"
+    assert _is_hackathon_active() is False
+
+
+@patch("backend.analysis.nexus.settings")
+def test_hackathon_mode_disabled(mock_settings):
+    mock_settings.HACKATHON_MODE = False
+    mock_settings.HACKATHON_ENDS = "2099-12-31"
+    assert _is_hackathon_active() is False
+
+
+@patch("backend.analysis.nexus.settings")
+def test_hackathon_grants_spymaster_quota(mock_settings, nexus_db):
+    """Free-tier wallet gets Spymaster limits during hackathon."""
+    mock_settings.HACKATHON_MODE = True
+    mock_settings.HACKATHON_ENDS = "2099-12-31"
+
+    # Wallet has no subscription row at all (tier 0 normally)
+    result = check_subscription_quota(nexus_db, "0xhacker", tier=0)
+    assert result["allowed"] is True
+    assert result["max"] == 10  # Spymaster limit
+    assert result["tier"] == 3  # Elevated to Spymaster
+
+
+@patch("backend.analysis.nexus.settings")
+def test_no_hackathon_free_tier_blocked(mock_settings, nexus_db):
+    """Free-tier wallet is blocked when hackathon is off."""
+    mock_settings.HACKATHON_MODE = False
+    mock_settings.HACKATHON_ENDS = "2099-12-31"
+
+    result = check_subscription_quota(nexus_db, "0xhacker", tier=0)
+    assert result["allowed"] is False
+    assert result["max"] == 0
+
+
+@patch("backend.analysis.nexus.settings")
+def test_hackathon_quota_usage_shows_spymaster(mock_settings, nexus_db):
+    """Quota usage endpoint returns Spymaster limits during hackathon."""
+    mock_settings.HACKATHON_MODE = True
+    mock_settings.HACKATHON_ENDS = "2099-12-31"
+
+    usage = get_quota_usage(nexus_db, "0xhacker")
+    assert usage["tier"] == 3
+    assert usage["subscriptions_max"] == 10
+    assert usage["deliveries_max"] == 1000
+
+
+@patch("backend.analysis.nexus.settings")
+def test_hackathon_expired_reverts_to_real_tier(mock_settings, nexus_db):
+    """After hackathon ends, wallet reverts to actual tier."""
+    mock_settings.HACKATHON_MODE = True
+    mock_settings.HACKATHON_ENDS = "2020-01-01"  # Expired
+
+    usage = get_quota_usage(nexus_db, "0xhacker")
+    assert usage["tier"] == 0
+    assert usage["subscriptions_max"] == 0

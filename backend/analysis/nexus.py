@@ -18,9 +18,11 @@ import hmac
 import json
 import secrets
 import time
+from datetime import date
 
 import httpx
 
+from backend.core.config import settings
 from backend.core.logger import get_logger
 from backend.db.database import get_db
 
@@ -38,6 +40,27 @@ TIER_LIMITS: dict[int, dict[str, int]] = {
     2: {"max_subscriptions": 2, "max_deliveries_day": 100},  # Oracle
     3: {"max_subscriptions": 10, "max_deliveries_day": 1000},  # Spymaster
 }
+
+
+SPYMASTER_TIER = 3
+
+
+def _is_hackathon_active() -> bool:
+    """Check if hackathon mode is active and not expired."""
+    if not settings.HACKATHON_MODE:
+        return False
+    try:
+        ends = date.fromisoformat(settings.HACKATHON_ENDS)
+        return date.today() <= ends
+    except ValueError:
+        return False
+
+
+def _effective_tier(db_tier: int) -> int:
+    """Return Spymaster tier during hackathon, else the DB tier."""
+    if _is_hackathon_active():
+        return SPYMASTER_TIER
+    return db_tier
 
 
 def generate_api_key() -> str:
@@ -60,6 +83,7 @@ def check_subscription_quota(db, wallet: str, tier: int) -> dict:
 
     Returns {"allowed": bool, "current": int, "max": int, "tier": int}.
     """
+    tier = _effective_tier(tier)
     limits = TIER_LIMITS.get(tier, TIER_LIMITS[0])
     max_subs = limits["max_subscriptions"]
 
@@ -98,10 +122,11 @@ def check_delivery_quota(db, subscription_id: int) -> bool:
         (wallet,),
     ).fetchone()
 
-    tier = 0
+    db_tier = 0
     if tier_row and tier_row["expires_at"] > int(time.time()):
-        tier = tier_row["tier"]
+        db_tier = tier_row["tier"]
 
+    tier = _effective_tier(db_tier)
     limits = TIER_LIMITS.get(tier, TIER_LIMITS[0])
     max_daily = limits["max_deliveries_day"]
     if max_daily == 0:
@@ -126,10 +151,11 @@ def get_quota_usage(db, wallet: str) -> dict:
         (wallet,),
     ).fetchone()
 
-    tier = 0
+    db_tier = 0
     if tier_row and tier_row["expires_at"] > int(time.time()):
-        tier = tier_row["tier"]
+        db_tier = tier_row["tier"]
 
+    tier = _effective_tier(db_tier)
     limits = TIER_LIMITS.get(tier, TIER_LIMITS[0])
 
     sub_count = db.execute(

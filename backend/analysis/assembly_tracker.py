@@ -62,9 +62,7 @@ def get_watcher_assemblies(db: sqlite3.Connection) -> list[dict]:
         assemblies.append(
             {
                 "assembly_id": row["assembly_id"],
-                "type": ASSEMBLY_TYPE_NAMES.get(
-                    row["assembly_type"], row["assembly_type"]
-                ),
+                "type": ASSEMBLY_TYPE_NAMES.get(row["assembly_type"], row["assembly_type"]),
                 "type_id": row["assembly_type"],
                 "solar_system_id": row["solar_system_id"],
                 "solar_system_name": row["solar_system_name"] or "",

@@ -1,6 +1,6 @@
-import { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import type { ReactNode } from 'react';
-import { useCurrentAccount, useDisconnectWallet } from '@mysten/dapp-kit';
+import { useCurrentAccount, useDisconnectWallet, useSignPersonalMessage } from '@mysten/dapp-kit';
 import { api } from '../api';
 import type { SubscriptionData } from '../api';
 
@@ -27,13 +27,15 @@ interface AuthState {
 const AuthContext = createContext<AuthState | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [wallet, setWallet] = useState<string | null>(null);
+  const [wallet, setWallet] = useState<string | null>(() => localStorage.getItem(WALLET_KEY));
   const [subscription, setSubscription] = useState<SubscriptionData | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const sessionVerified = useRef(false);
 
   const currentAccount = useCurrentAccount();
   const { mutate: disconnectWallet } = useDisconnectWallet();
+  const { mutateAsync: signPersonalMessage } = useSignPersonalMessage();
 
   const fetchSubscription = useCallback(async (addr: string) => {
     try {
@@ -44,47 +46,77 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // When Sui wallet connects/changes, register session with backend
+  // Restore session on mount — runs once before dApp kit auto-connects
   useEffect(() => {
-    if (!currentAccount?.address) {
-      // Wallet disconnected in dapp-kit but we may still have a session
-      return;
+    const savedSession = localStorage.getItem(SESSION_KEY);
+    const savedWallet = localStorage.getItem(WALLET_KEY);
+    if (savedSession && savedWallet) {
+      api.walletMe()
+        .then((me) => {
+          setWallet(me.wallet_address);
+          setIsAdmin(me.is_admin);
+          sessionVerified.current = true;
+        })
+        .catch(() => {
+          // Session expired — clear it, dApp kit auto-connect will re-auth
+          localStorage.removeItem(SESSION_KEY);
+          sessionVerified.current = false;
+        });
     }
+  }, []);
+
+  // When dApp kit wallet connects/changes
+  useEffect(() => {
+    if (!currentAccount?.address) return;
 
     const suiAddress = currentAccount.address;
-
-    // Check if we already have a session for this wallet
     const savedWallet = localStorage.getItem(WALLET_KEY);
     const savedSession = localStorage.getItem(SESSION_KEY);
+
+    // Already have a saved session for this wallet — restore without re-signing
     if (savedWallet === suiAddress && savedSession) {
-      // Already have a session, just restore state
       setWallet(suiAddress);
-      // Verify session is still valid
+      // Verify session in background — if expired, lazy re-auth on next API call
       api.walletMe()
         .then((me) => {
           setIsAdmin(me.is_admin);
+          sessionVerified.current = true;
         })
         .catch(() => {
-          // Session expired, re-register
-          registerSession(suiAddress);
+          // Session expired — clear it but DON'T re-auth automatically.
+          // User will see read-only state; they can disconnect + reconnect to re-sign.
+          localStorage.removeItem(SESSION_KEY);
+          sessionVerified.current = false;
         });
       return;
     }
 
-    // New connection — register with backend
-    registerSession(suiAddress);
+    // No saved session for this wallet — full challenge-response auth
+    if (!savedSession) {
+      authenticateWallet(suiAddress);
+    }
   }, [currentAccount?.address]);
 
-  const registerSession = async (address: string) => {
+  const authenticateWallet = async (address: string) => {
     setConnecting(true);
     try {
-      const result = await api.walletConnect(address);
+      // Step 1: Get challenge nonce from backend
+      const challenge = await api.walletChallenge();
+
+      // Step 2: Sign the challenge message with dApp kit
+      const messageBytes = new TextEncoder().encode(challenge.message);
+      const { signature } = await signPersonalMessage({ message: messageBytes });
+
+      // Step 3: Submit signature to backend for verification
+      const result = await api.walletConnect(address, signature, challenge.message);
       localStorage.setItem(SESSION_KEY, result.session_token);
       localStorage.setItem(WALLET_KEY, address);
       setWallet(address);
       setIsAdmin(result.is_admin);
-    } catch {
-      // Backend may be down, still show wallet as connected
+      sessionVerified.current = true;
+    } catch (err) {
+      console.error('Wallet auth failed:', err);
+      // Still show wallet as connected for read-only access
       localStorage.setItem(WALLET_KEY, address);
       setWallet(address);
     }
@@ -100,51 +132,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     fetchSubscription(wallet);
   }, [wallet, fetchSubscription]);
 
-  // Restore session on mount (if dapp-kit hasn't connected yet)
-  useEffect(() => {
-    const savedSession = localStorage.getItem(SESSION_KEY);
-    const savedWallet = localStorage.getItem(WALLET_KEY);
-    if (savedSession && savedWallet && !currentAccount) {
-      // We have a saved session but dapp-kit hasn't auto-connected yet
-      // Verify session validity
-      api.walletMe()
-        .then((me) => {
-          setWallet(me.wallet_address);
-          setIsAdmin(me.is_admin);
-        })
-        .catch(() => {
-          // Session invalid, clear
-          localStorage.removeItem(SESSION_KEY);
-          localStorage.removeItem(WALLET_KEY);
-        });
-    }
-  }, []);
-
-  // Handle wallet disconnect from dapp-kit
-  useEffect(() => {
-    if (currentAccount === null && wallet) {
-      // dapp-kit reports no account but we have a wallet — user disconnected
-      // Only clear if we previously had a currentAccount (not initial load)
-    }
-  }, [currentAccount, wallet]);
-
   const connect = useCallback(async () => {
-    // This is a no-op now — connection is handled by dapp-kit ConnectButton
-    // which triggers the useEffect above via useCurrentAccount()
+    // Connection handled by dapp-kit ConnectButton → useEffect above
   }, []);
 
   const disconnect = useCallback(() => {
-    // Clear backend session
     api.walletDisconnect().catch(() => {});
-
-    // Clear local state
     localStorage.removeItem(SESSION_KEY);
     localStorage.removeItem(WALLET_KEY);
     setWallet(null);
     setSubscription(null);
     setIsAdmin(false);
-
-    // Disconnect dapp-kit wallet
+    sessionVerified.current = false;
     disconnectWallet();
   }, [disconnectWallet]);
 
