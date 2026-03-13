@@ -31,6 +31,7 @@ import { CrownRoster } from './components/CrownRoster';
 import { AdminAnalytics } from './components/AdminAnalytics';
 import { SystemDossier } from './components/SystemDossier';
 import { TitleCard } from './components/TitleCard';
+import { AegisEcosystem } from './components/AegisEcosystem';
 import { useAuth } from './contexts/AuthContext';
 
 type Tab = 'intel' | 'tactical' | 'c5' | 'compare' | 'feed' | 'account' | 'admin';
@@ -365,6 +366,11 @@ export default function App() {
           <Route path="*" element={<Dashboard />} />
         </Routes>
       </main>
+
+      {/* Aegis Ecosystem */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+        <AegisEcosystem />
+      </div>
 
       {/* Footer */}
       <footer className="border-t border-[var(--eve-border)] px-4 sm:px-6 py-4 mt-12">
