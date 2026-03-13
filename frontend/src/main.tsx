@@ -11,16 +11,16 @@ import { AuthProvider } from './contexts/AuthContext.tsx'
 
 const queryClient = new QueryClient();
 const { networkConfig } = createNetworkConfig({
-  mainnet: {
-    url: 'https://fullnode.mainnet.sui.io:443',
-    network: 'mainnet',
+  testnet: {
+    url: 'https://fullnode.testnet.sui.io:443',
+    network: 'testnet',
   },
 });
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <SuiClientProvider networks={networkConfig} defaultNetwork="mainnet">
+      <SuiClientProvider networks={networkConfig} defaultNetwork="testnet">
         <WalletProvider autoConnect>
           <BrowserRouter>
             <AuthProvider>
