@@ -282,7 +282,7 @@ export function AccountPage() {
             Hackathon Mode Active
           </div>
           <p className="text-xs text-[var(--eve-dim)]">
-            All tiers unlocked during hackathon — subscribe now to lock in access post-hackathon
+            All tiers unlocked during hackathon
           </p>
         </div>
       )}
