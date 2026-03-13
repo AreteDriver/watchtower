@@ -540,3 +540,38 @@ def test_mark_alert_read(client):
     r = client.post("/api/alerts/999/read")
     assert r.status_code == 200
     assert r.json()["status"] == "ok"
+
+
+def test_admin_analytics_ai_usage(test_db, client):
+    """Admin analytics returns AI usage stats."""
+    import time
+
+    now = int(time.time())
+    test_db.execute(
+        "INSERT INTO ai_usage (model, operation, input_tokens, output_tokens,"
+        " cached_tokens, entity_id, created_at)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?)",
+        ("claude-sonnet-4-5", "dossier", 500, 200, 50, "char-001", now),
+    )
+    test_db.execute(
+        "INSERT INTO ai_usage (model, operation, input_tokens, output_tokens,"
+        " cached_tokens, entity_id, created_at)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?)",
+        ("claude-sonnet-4-5", "battle_report", 1000, 400, 0, "battle", now),
+    )
+    test_db.commit()
+
+    with patch("backend.api.routes.is_admin_wallet", return_value=True):
+        r = client.get(
+            "/api/admin/analytics", headers={"X-Wallet-Address": "admin"}
+        )
+    assert r.status_code == 200
+    data = r.json()
+    ai = data["ai_usage"]
+    assert ai["total_calls"] == 2
+    assert ai["total_input_tokens"] == 1500
+    assert ai["total_output_tokens"] == 600
+    assert ai["total_cached_tokens"] == 50
+    assert ai["calls_24h"] == 2
+    assert len(ai["by_operation"]) == 2
+    assert len(ai["recent"]) == 2

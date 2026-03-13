@@ -16,6 +16,30 @@ from backend.db.database import get_db
 
 logger = get_logger("narrative")
 
+
+def _track_usage(msg, operation: str, entity_id: str = "") -> None:
+    """Record Anthropic API token usage to ai_usage table."""
+    try:
+        usage = msg.usage
+        db = get_db()
+        db.execute(
+            """INSERT INTO ai_usage (model, operation, input_tokens, output_tokens,
+               cached_tokens, entity_id)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (
+                msg.model,
+                operation,
+                usage.input_tokens,
+                usage.output_tokens,
+                getattr(usage, "cache_read_input_tokens", 0) or 0,
+                entity_id,
+            ),
+        )
+        db.commit()
+    except Exception as e:
+        logger.debug("Usage tracking error (non-fatal): %s", e)
+
+
 DOSSIER_SYSTEM = """You are the WatchTower — the living memory of EVE Frontier.
 You analyze on-chain event data and write concise, evocative dossier entries
 for game entities (gates, characters, corps, solar systems).
@@ -226,6 +250,7 @@ def generate_dossier_narrative(entity_id: str) -> str:
             ],
         )
         content = msg.content[0].text
+        _track_usage(msg, "dossier", entity_id)
         _store_cache(db, entity_id, "dossier", eh, content)
         logger.info("Generated dossier for %s", entity_id)
         return content
@@ -277,6 +302,7 @@ def generate_battle_report(events: list[dict]) -> dict:
         )
 
         content = msg.content[0].text
+        _track_usage(msg, "battle_report", cache_key)
         # Parse JSON from response
         try:
             report = json.loads(content)

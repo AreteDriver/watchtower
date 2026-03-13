@@ -485,6 +485,59 @@ async def subscribe(request: Request, req: SubscribeRequest):
     return record_subscription(db, req.wallet_address, req.tier, req.duration)
 
 
+def _get_ai_usage_stats(db, day_ago: int, week_ago: int) -> dict:
+    """Query AI token usage stats for admin dashboard."""
+    totals = db.execute(
+        """SELECT COUNT(*) as calls,
+                  COALESCE(SUM(input_tokens), 0) as input_total,
+                  COALESCE(SUM(output_tokens), 0) as output_total,
+                  COALESCE(SUM(cached_tokens), 0) as cached_total
+           FROM ai_usage"""
+    ).fetchone()
+
+    usage_24h = db.execute(
+        """SELECT COUNT(*) as calls,
+                  COALESCE(SUM(input_tokens), 0) as input_total,
+                  COALESCE(SUM(output_tokens), 0) as output_total
+           FROM ai_usage WHERE created_at > ?""",
+        (day_ago,),
+    ).fetchone()
+
+    usage_7d = db.execute(
+        """SELECT COUNT(*) as calls,
+                  COALESCE(SUM(input_tokens), 0) as input_total,
+                  COALESCE(SUM(output_tokens), 0) as output_total
+           FROM ai_usage WHERE created_at > ?""",
+        (week_ago,),
+    ).fetchone()
+
+    by_operation = db.execute(
+        """SELECT operation, COUNT(*) as calls,
+                  SUM(input_tokens) as input_total,
+                  SUM(output_tokens) as output_total
+           FROM ai_usage GROUP BY operation ORDER BY calls DESC"""
+    ).fetchall()
+
+    recent = db.execute(
+        """SELECT model, operation, input_tokens, output_tokens,
+                  cached_tokens, entity_id, created_at
+           FROM ai_usage ORDER BY created_at DESC LIMIT 10"""
+    ).fetchall()
+
+    return {
+        "total_calls": totals["calls"],
+        "total_input_tokens": totals["input_total"],
+        "total_output_tokens": totals["output_total"],
+        "total_cached_tokens": totals["cached_total"],
+        "calls_24h": usage_24h["calls"],
+        "tokens_24h": usage_24h["input_total"] + usage_24h["output_total"],
+        "calls_7d": usage_7d["calls"],
+        "tokens_7d": usage_7d["input_total"] + usage_7d["output_total"],
+        "by_operation": [dict(r) for r in by_operation],
+        "recent": [dict(r) for r in recent],
+    }
+
+
 @router.get("/admin/analytics")
 @limiter.limit("30/minute")
 async def get_admin_analytics(request: Request):
@@ -574,6 +627,7 @@ async def get_admin_analytics(request: Request):
             "spymaster": tier_dist.get(3, 0),
         },
         "top_active_7d": [dict(r) for r in top_active],
+        "ai_usage": _get_ai_usage_stats(db, day_ago, week_ago),
     }
 
 

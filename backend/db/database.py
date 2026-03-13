@@ -299,7 +299,20 @@ CREATE TABLE IF NOT EXISTS solar_systems (
     name TEXT NOT NULL
 );
 
+-- AI token usage tracking
+CREATE TABLE IF NOT EXISTS ai_usage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    model TEXT NOT NULL,
+    operation TEXT NOT NULL,
+    input_tokens INTEGER NOT NULL,
+    output_tokens INTEGER NOT NULL,
+    cached_tokens INTEGER DEFAULT 0,
+    entity_id TEXT,
+    created_at INTEGER DEFAULT (unixepoch())
+);
+
 -- Indexes
+CREATE INDEX IF NOT EXISTS idx_ai_usage_created ON ai_usage(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_killmails_timestamp ON killmails(timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_killmails_system ON killmails(solar_system_id, timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_killmails_victim ON killmails(victim_character_id);
