@@ -135,7 +135,7 @@ Subscription status is verified on-chain. The backend checks wallet subscription
 - **Bot**: Discord webhooks
 - **Deployment**: Fly.io (backend), Vercel (frontend), Docker
 - **Ingestion**: Never-crash poller with Sui GraphQL event subscription, error isolation
-- **Tests**: 523 passing, 80%+ coverage
+- **Tests**: 621 passing, 80%+ coverage
 
 ### Design Principles
 1. **The poller must never crash** — all errors logged, never raised
@@ -289,7 +289,7 @@ Deterministic titles computed from on-chain stats. Same data = same title for ev
 ## Development
 
 ```bash
-# Backend tests (523 passing, 80%+ coverage)
+# Backend tests (621 passing, 80%+ coverage)
 pytest tests/ -v
 
 # Frontend tests

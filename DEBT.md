@@ -3,7 +3,7 @@
 **Project**: WatchTower — The Living Memory of EVE Frontier
 **Audit Date**: 2026-03-12 (updated from March 10 audit)
 **Context**: EVE Frontier x Sui Hackathon 2026 (deadline March 31)
-**Stats**: 523 tests passing, 80%+ coverage, 1,320+ live characters, 24,502 system names
+**Stats**: 621 tests passing, 80%+ coverage, 1,320+ live characters, 24,502 system names
 
 ---
 
@@ -30,7 +30,7 @@
 
 | # | Issue | Location | Status |
 |---|---|---|---|
-| S8 | Discord bot at 10% test coverage | `discord_bot.py` — 249/276 uncovered | OPEN |
+| S8 | Discord bot at 10% test coverage | `discord_bot.py` — 249/276 uncovered | **FIXED** — 98% coverage, 98 tests |
 | S9 | Oracle C5 alerts untested | `oracle.py:222-333` at 62% | **FIXED** — 27 tests for all 4 alert types + cooldowns |
 | S10 | `gate_created`/`gate_linked` declared but never polled | `sui_graphql.py` | **FIXED** — Replaced with `location` event type |
 | S11 | StoryFeed.tsx bypasses api.ts for pagination | `StoryFeed.tsx` | **FIXED** — Uses `api.feed()` now |
