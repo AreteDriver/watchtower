@@ -37,7 +37,7 @@ export function AssemblyMap() {
   }
 
   return (
-    <div className="bg-[var(--eve-surface)] border border-[var(--eve-border)] rounded-lg p-4 space-y-4">
+    <div className="bg-[var(--eve-surface)] border border-[var(--eve-border)] rounded-lg p-3 space-y-2">
       {/* Header */}
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-bold text-[var(--eve-dim)] uppercase tracking-wider">
@@ -50,28 +50,28 @@ export function AssemblyMap() {
       </div>
 
       {/* Stats grid */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-3 gap-2">
         <div className="text-center">
-          <div className="text-lg font-bold text-[var(--eve-green)]">{stats.systems_covered}</div>
+          <div className="text-base font-bold text-[var(--eve-green)]">{stats.systems_covered}</div>
           <div className="text-[10px] text-[var(--eve-dim)]">Systems</div>
         </div>
         <div className="text-center">
-          <div className="text-lg font-bold text-[var(--eve-text)]">{stats.online}</div>
+          <div className="text-base font-bold text-[var(--eve-text)]">{stats.online}</div>
           <div className="text-[10px] text-[var(--eve-dim)]">Online</div>
         </div>
         <div className="text-center">
-          <div className="text-lg font-bold text-[var(--eve-red)]">{stats.offline}</div>
+          <div className="text-base font-bold text-[var(--eve-red)]">{stats.offline}</div>
           <div className="text-[10px] text-[var(--eve-dim)]">Offline</div>
         </div>
       </div>
 
       {/* Assembly list */}
-      <div className="space-y-1 max-h-48 overflow-y-auto">
+      <div className="max-h-40 overflow-y-auto">
         {stats.assemblies.map((a) => (
-          <div key={a.assembly_id} className="flex items-center justify-between text-xs py-1 border-b border-[var(--eve-border)]">
-            <div className="flex items-center gap-2">
+          <div key={a.assembly_id} className="flex items-center justify-between text-xs py-0.5 border-b border-[var(--eve-border)]/50">
+            <div className="flex items-center gap-1.5">
               <span
-                className="w-2 h-2 rounded-full"
+                className="w-1.5 h-1.5 rounded-full"
                 style={{ backgroundColor: STATE_COLORS[a.state] || 'var(--eve-dim)' }}
               />
               <span className="text-[var(--eve-text)]">

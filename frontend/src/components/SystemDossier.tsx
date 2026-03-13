@@ -3,6 +3,16 @@ import { useParams, useNavigate } from 'react-router';
 import { api } from '../api';
 import type { SystemDossier as SystemDossierData } from '../api';
 
+const MONOLITH_API = 'https://monolith-evefrontier.fly.dev/api';
+
+interface MonolithAnomaly {
+  anomaly_id: string;
+  anomaly_type: string;
+  severity: string;
+  detected_at: number;
+  evidence?: { description?: string };
+}
+
 const DANGER_COLORS: Record<string, string> = {
   extreme: 'text-[var(--eve-red)]',
   high: 'text-[var(--eve-orange)]',
@@ -17,6 +27,7 @@ export function SystemDossier() {
   const [data, setData] = useState<SystemDossierData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [anomalies, setAnomalies] = useState<MonolithAnomaly[]>([]);
 
   useEffect(() => {
     if (!systemId) return;
@@ -26,6 +37,11 @@ export function SystemDossier() {
       .then(setData)
       .catch(() => setError(`System not found: ${systemId}`))
       .finally(() => setLoading(false));
+
+    fetch(`${MONOLITH_API}/anomalies?system_id=${systemId}&limit=10`)
+      .then((r) => r.json())
+      .then((d) => setAnomalies(d.data || []))
+      .catch(() => setAnomalies([]));
   }, [systemId]);
 
   if (!systemId) {
@@ -212,6 +228,43 @@ export function SystemDossier() {
                 </span>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Chain Integrity (Monolith) */}
+      {anomalies.length > 0 && (
+        <div className="bg-[var(--eve-surface)] border border-[var(--eve-border)] rounded-lg p-4"
+          style={{ borderLeftWidth: '2px', borderLeftColor: '#7F77DD' }}
+        >
+          <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] font-bold mb-3"
+            style={{ color: '#7F77DD' }}
+          >
+            Chain Integrity &mdash; Monolith ({anomalies.length})
+          </h3>
+          <div className="space-y-1.5">
+            {anomalies.map((a) => {
+              const sevColor = a.severity === 'CRITICAL' ? 'var(--eve-red)' :
+                a.severity === 'HIGH' ? '#f59e0b' : 'var(--eve-dim)';
+              return (
+                <div key={a.anomaly_id} className="flex items-center justify-between text-xs py-0.5">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-bold" style={{ color: sevColor }}>
+                      {a.severity}
+                    </span>
+                    <span className="text-[var(--eve-text)]">
+                      {a.anomaly_type.replace(/_/g, ' ')}
+                    </span>
+                  </div>
+                  <span className="text-[var(--eve-dim)] font-mono text-[10px]">
+                    {new Date(a.detected_at * 1000).toLocaleDateString()}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+          <div className="text-[10px] text-[var(--eve-dim)] mt-2 opacity-60">
+            Anomalies detected by Monolith integrity monitor
           </div>
         </div>
       )}

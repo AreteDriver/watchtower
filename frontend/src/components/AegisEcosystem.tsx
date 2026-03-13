@@ -76,7 +76,7 @@ export function AegisEcosystem() {
 
         {/* Dossier Card */}
         <div
-          className="aegis-scan-container rounded-lg p-5"
+          className="aegis-scan-container rounded-lg p-4"
           style={{
             background: 'var(--eve-surface)',
             borderLeft: '2px solid #7F77DD',

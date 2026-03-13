@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router';
 import { api } from '../api';
 import type { HotzoneData } from '../api';
 
+const MONOLITH_API = 'https://monolith-evefrontier.fly.dev/api';
+
 const DANGER_COLORS: Record<string, string> = {
   extreme: '#ff3232',
   high: '#ff9632',
@@ -16,6 +18,7 @@ export function HotzoneMap() {
   const [hotzones, setHotzones] = useState<HotzoneData[]>([]);
   const [window, setWindow] = useState('all');
   const [loading, setLoading] = useState(true);
+  const [anomalySystems, setAnomalySystems] = useState<Record<string, number>>({});
 
   useEffect(() => {
     setLoading(true);
@@ -24,6 +27,17 @@ export function HotzoneMap() {
       .catch(() => setHotzones([]))
       .finally(() => setLoading(false));
   }, [window]);
+
+  useEffect(() => {
+    fetch(`${MONOLITH_API}/stats`)
+      .then((r) => r.json())
+      .then((d) => {
+        const map: Record<string, number> = {};
+        for (const s of d.by_system || []) map[s.system_id] = s.count;
+        setAnomalySystems(map);
+      })
+      .catch(() => {});
+  }, []);
 
   const windows = ['24h', '7d', '30d', 'all'] as const;
   const maxKills = Math.max(...hotzones.map((h) => h.kills), 1);
@@ -68,6 +82,7 @@ export function HotzoneMap() {
             const pct = (hz.kills / maxKills) * 100;
             const color = DANGER_COLORS[hz.danger_level] || DANGER_COLORS.minimal;
             const displayName = hz.solar_system_name || hz.solar_system_id.slice(0, 12);
+            const anomalyCount = anomalySystems[hz.solar_system_id] ?? 0;
 
             return (
               <button
@@ -78,13 +93,18 @@ export function HotzoneMap() {
                 {/* Bar row */}
                 <div className="flex items-center gap-2 py-1.5 px-1 hover:bg-[var(--eve-border)]/30 rounded transition-colors">
                   {/* System label */}
-                  <div className="w-28 shrink-0 truncate">
+                  <div className="w-28 shrink-0 truncate flex items-center gap-1">
                     <span
                       className="font-mono text-xs font-bold group-hover:underline"
                       style={{ color }}
                     >
                       {displayName}
                     </span>
+                    {anomalyCount > 0 && (
+                      <span className="text-[8px] font-mono text-[#f59e0b]" title={`${anomalyCount} chain anomalies (Monolith)`}>
+                        !{anomalyCount}
+                      </span>
+                    )}
                   </div>
 
                   {/* Bar */}
