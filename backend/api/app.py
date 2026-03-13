@@ -16,6 +16,7 @@ from backend.analysis.story_feed import generate_feed_items
 from backend.api.auth import router as auth_router
 from backend.api.cycle5 import router as cycle5_router
 from backend.api.events import router as events_router
+from backend.api.pricing import router as pricing_router
 from backend.api.rate_limit import limiter
 from backend.api.routes import router
 from backend.api.stripe_webhook import router as stripe_router
@@ -139,6 +140,7 @@ app.include_router(auth_router, prefix="/api")
 app.include_router(events_router, prefix="/api")
 app.include_router(cycle5_router, prefix="/api")
 app.include_router(stripe_router, prefix="/api")
+app.include_router(pricing_router, prefix="/api")
 
 # Serve frontend static files if built
 FRONTEND_DIR = (Path(__file__).parent.parent.parent / "frontend" / "dist").resolve()

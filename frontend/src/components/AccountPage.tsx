@@ -5,15 +5,17 @@ import { Transaction } from '@mysten/sui/transactions';
 import { useAuth, TIER_LABELS } from '../contexts/AuthContext';
 import { api } from '../api';
 import type { WatchData, AlertData, NexusSubscription, NexusDelivery, NexusQuota } from '../api';
+import { usePricing } from '../hooks/usePricing';
 
-const WATCHTOWER_PACKAGE = '0xbc6a9d5e19e1d46a734360ee205c2230693a56dfff782d192638e588fcac0a94';
-const SUBSCRIPTION_REGISTRY = '0x4e83950d3500f6cb26b8fb5e89b97ed57d79380850f20e58f293a4a569c4ecca';
+const WATCHTOWER_PACKAGE = '0x3ca7e3af5bf5b072157d02534f5e4013cf11a12b79385c270d97de480e7b7dca';
+const SUBSCRIPTION_CONFIG = '0x7bd0e266d3c26665b13c432f70d9b7e5ecc266de993094f8ac8290020283be9d';
+const SUBSCRIPTION_REGISTRY = '0x4bb5a6999fadd2039b8cfcb7a1b3de0f07973fe0ec74181b024edaaa6069d160';
 const SUI_CLOCK = '0x6';
 
-const TIER_PRICES_MIST: Record<number, number> = {
-  1: 500_000_000,   // 0.5 SUI
-  2: 2_000_000_000, // 2.0 SUI
-  3: 5_000_000_000, // 5.0 SUI
+const TIER_KEYS: Record<number, string> = {
+  1: 'scout',
+  2: 'oracle',
+  3: 'spymaster',
 };
 
 const TIER_FEATURES: Record<number, string[]> = {
@@ -48,6 +50,7 @@ export function AccountPage() {
   const {
     wallet, subscription, isAdmin, disconnect, refreshSubscription,
   } = useAuth();
+  const { pricing, loading: pricingLoading, error: pricingError, refetch: refetchPricing } = usePricing();
   const [watches, setWatches] = useState<WatchData[]>([]);
   const [alerts, setAlerts] = useState<AlertData[]>([]);
   const [loadingWatches, setLoadingWatches] = useState(false);
@@ -74,16 +77,28 @@ export function AccountPage() {
   const location = useLocation();
 
   const handleSubscribe = async (tier: number) => {
-    const price = TIER_PRICES_MIST[tier];
-    if (!price) return;
     setSubscribing(tier);
     setTxError('');
     try {
+      // Refetch pricing to get fresh rate
+      const freshData = await api.getPricing();
+      if (freshData.is_stale) {
+        setTxError('Price data is outdated. Please refresh prices and try again.');
+        return;
+      }
+      const tierKey = TIER_KEYS[tier];
+      if (!tierKey || !freshData.tiers[tierKey]) {
+        setTxError('Invalid tier');
+        return;
+      }
+      const price = freshData.tiers[tierKey].sui_mist;
+
       const tx = new Transaction();
       const [coin] = tx.splitCoins(tx.gas, [price]);
       tx.moveCall({
         target: `${WATCHTOWER_PACKAGE}::subscription::subscribe`,
         arguments: [
+          tx.object(SUBSCRIPTION_CONFIG),
           tx.object(SUBSCRIPTION_REGISTRY),
           tx.pure.u8(tier),
           coin,
@@ -231,33 +246,25 @@ export function AccountPage() {
   const tierLabel = TIER_LABELS[currentTier] || TIER_LABELS[0];
   const isHackathonMode = currentTier >= 3 && subscription?.active;
 
-  const SUBSCRIPTION_TIERS = [
-    {
-      name: 'Scout',
-      tier: 1,
-      suiPrice: '0.5 SUI / week',
-      fiatPrice: '$4.99/mo',
-      color: 'var(--eve-blue)',
-      features: TIER_FEATURES[1],
-    },
-    {
-      name: 'Oracle',
-      tier: 2,
-      suiPrice: '2.0 SUI / week',
-      fiatPrice: '$9.99/mo',
-      color: 'var(--eve-green)',
-      features: TIER_FEATURES[2],
-      popular: true,
-    },
-    {
-      name: 'Spymaster',
-      tier: 3,
-      suiPrice: '5.0 SUI / week',
-      fiatPrice: '$19.99/mo',
-      color: 'var(--eve-orange)',
-      features: TIER_FEATURES[3],
-    },
-  ];
+  const tierColors: Record<string, string> = {
+    scout: 'var(--eve-blue)',
+    oracle: 'var(--eve-green)',
+    spymaster: 'var(--eve-orange)',
+  };
+
+  const SUBSCRIPTION_TIERS = (['scout', 'oracle', 'spymaster'] as const).map((key) => {
+    const tp = pricing?.tiers[key];
+    return {
+      key,
+      name: key.charAt(0).toUpperCase() + key.slice(1),
+      tier: tp?.tier ?? ({ scout: 1, oracle: 2, spymaster: 3 }[key]),
+      suiPrice: tp ? `${tp.sui_per_week} SUI / week` : '...',
+      fiatPrice: tp ? `$${tp.usd_per_week.toFixed(2)}/wk` : '...',
+      color: tierColors[key],
+      features: TIER_FEATURES[{ scout: 1, oracle: 2, spymaster: 3 }[key]],
+      popular: key === 'oracle',
+    };
+  });
 
   return (
     <div className="space-y-6">
@@ -281,6 +288,48 @@ export function AccountPage() {
         <p className="text-xs text-[var(--eve-dim)]">
           Unlock deeper intelligence with a WatchTower subscription. Pay on-chain with SUI or by card.
         </p>
+
+        {/* Stale price warning */}
+        {pricing?.is_stale && (
+          <div className="flex items-center justify-between bg-[var(--eve-bg)] border border-[var(--eve-orange,#FF6600)] rounded p-3">
+            <div className="text-xs text-[var(--eve-orange,#FF6600)]">
+              Price data may be outdated. SUI prices shown might not reflect current market rates.
+            </div>
+            <button
+              onClick={refetchPricing}
+              className="ml-3 px-3 py-1 text-xs font-bold border border-[var(--eve-orange,#FF6600)]
+                         text-[var(--eve-orange,#FF6600)] rounded hover:bg-[var(--eve-orange,#FF6600)]
+                         hover:text-[var(--eve-bg)] transition-colors shrink-0"
+            >
+              Refresh Prices
+            </button>
+          </div>
+        )}
+
+        {/* Pricing error */}
+        {pricingError && (
+          <div className="flex items-center justify-between bg-[var(--eve-bg)] border border-[var(--eve-red)] rounded p-3">
+            <div className="text-xs text-[var(--eve-red)]">{pricingError}</div>
+            <button
+              onClick={refetchPricing}
+              className="ml-3 px-3 py-1 text-xs font-bold border border-[var(--eve-red)]
+                         text-[var(--eve-red)] rounded hover:bg-[var(--eve-red)]
+                         hover:text-[var(--eve-bg)] transition-colors shrink-0"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
+        {/* SUI/USD rate display */}
+        {pricing && !pricingLoading && (
+          <div className="text-[10px] text-[var(--eve-dim)] text-right">
+            1 SUI = ${pricing.sui_usd.toFixed(4)} USD
+            {' '}&middot;{' '}
+            Updated {new Date(pricing.fetched_at).toLocaleTimeString()}
+          </div>
+        )}
+
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {txError && (
             <div className="col-span-full text-xs text-[var(--eve-red)] bg-[var(--eve-bg)] border border-[var(--eve-red)] rounded p-2 mb-2">
@@ -310,7 +359,9 @@ export function AccountPage() {
                   <div className="text-xs font-bold uppercase" style={{ color: plan.color }}>
                     {plan.name}
                   </div>
-                  <div className="text-lg font-bold text-[var(--eve-text)]">{plan.suiPrice}</div>
+                  <div className="text-lg font-bold text-[var(--eve-text)]">
+                    {pricingLoading ? '...' : plan.suiPrice}
+                  </div>
                   <div className="text-[10px] text-[var(--eve-dim)]">~{plan.fiatPrice} equivalent</div>
                 </div>
                 <ul className="text-[10px] text-[var(--eve-dim)] space-y-0.5">
@@ -327,15 +378,27 @@ export function AccountPage() {
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    <button
-                      className="w-full px-3 py-1.5 text-xs font-bold rounded transition-opacity
-                                 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-                      style={{ backgroundColor: plan.color, color: 'var(--eve-bg)' }}
-                      disabled={subscribing !== null}
-                      onClick={() => handleSubscribe(plan.tier)}
-                    >
-                      {subscribing === plan.tier ? 'Confirming...' : 'Pay with SUI'}
-                    </button>
+                    {pricing?.is_stale ? (
+                      <button
+                        className="w-full px-3 py-1.5 text-xs font-bold rounded border
+                                   border-[var(--eve-orange,#FF6600)] text-[var(--eve-orange,#FF6600)]
+                                   hover:bg-[var(--eve-orange,#FF6600)] hover:text-[var(--eve-bg)]
+                                   transition-colors"
+                        onClick={refetchPricing}
+                      >
+                        Refresh Prices
+                      </button>
+                    ) : (
+                      <button
+                        className="w-full px-3 py-1.5 text-xs font-bold rounded transition-opacity
+                                   hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                        style={{ backgroundColor: plan.color, color: 'var(--eve-bg)' }}
+                        disabled={subscribing !== null || pricingLoading || !pricing}
+                        onClick={() => handleSubscribe(plan.tier)}
+                      >
+                        {subscribing === plan.tier ? 'Confirming...' : pricingLoading ? 'Loading...' : 'Pay with SUI'}
+                      </button>
+                    )}
                     <button
                       className="w-full px-3 py-1.5 text-xs font-bold rounded border
                                  transition-colors hover:text-[var(--eve-text)]"

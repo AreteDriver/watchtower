@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from backend.analysis.subscriptions import record_subscription
+from backend.api.pricing import get_sui_price
 from backend.core.config import settings
 from backend.core.logger import get_logger
 from backend.db.database import get_db
@@ -68,6 +69,10 @@ async def create_checkout(body: CheckoutRequest, request: Request) -> dict:
     tier_name = STRIPE_TIER_NAMES[body.tier]
     price_cents = STRIPE_TIER_PRICES[body.tier]
 
+    # Lock SUI equivalent at checkout time
+    sui_usd, _fetched_at, _is_stale = get_sui_price()
+    sui_amount = round(price_cents / 100 / sui_usd, 4)
+
     try:
         session = stripe.checkout.Session.create(
             mode="payment",
@@ -84,6 +89,8 @@ async def create_checkout(body: CheckoutRequest, request: Request) -> dict:
             metadata={
                 "wallet_address": wallet,
                 "tier": tier_name.lower(),
+                "sui_amount": str(sui_amount),
+                "sui_usd_at_checkout": str(round(sui_usd, 4)),
             },
             success_url=f"{FRONTEND_URL}/account?checkout=success",
             cancel_url=f"{FRONTEND_URL}/account?checkout=cancelled",

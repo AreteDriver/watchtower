@@ -544,6 +544,16 @@ export const api = {
   // System dossier
   systemDossier: (systemId: string) =>
     fetchJson<SystemDossier>(`/system/${systemId}`),
+  systemNarrative: (systemId: string) =>
+    fetchJson<{ system_id: string; narrative: string }>(`/system/${systemId}/narrative`),
+
+  // Pricing oracle
+  getPricing: () => fetchJson<{
+    sui_usd: number;
+    fetched_at: string;
+    is_stale: boolean;
+    tiers: Record<string, { usd_per_week: number; sui_per_week: number; sui_mist: number; tier: number }>;
+  }>('/pricing'),
 
   // Stripe checkout
   createCheckout: (tier: number) =>
