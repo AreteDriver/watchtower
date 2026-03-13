@@ -18,7 +18,7 @@ Chain archaeology + AI intelligence platform. Reads the blockchain → entity do
 - **AI**: Anthropic API (narrative generation + token usage tracking)
 - **Bot**: Discord webhooks
 - **Deploy**: Fly.io (backend) + Vercel (frontend)
-- **Tests**: 621 passing, 80%+ coverage (pytest)
+- **Tests**: 662 passing, 80%+ coverage (pytest)
 - **Data sources**: Sui GraphQL (dynamic), World API static (system names)
 
 ### Data Flow
@@ -121,7 +121,7 @@ witness/
 │   ├── components/    # 28 React components
 │   ├── contexts/      # AuthContext (wallet)
 │   └── hooks/         # useEventStream (SSE)
-├── tests/             # 621 tests
+├── tests/             # 662 tests
 ├── Dockerfile
 ├── fly.toml
 └── frontend/vercel.json

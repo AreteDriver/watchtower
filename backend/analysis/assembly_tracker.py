@@ -12,6 +12,23 @@ from backend.core.logger import get_logger
 
 logger = get_logger("assembly_tracker")
 
+ASSEMBLY_TYPE_NAMES: dict[str, str] = {
+    "88063": "Refinery",
+    "88064": "Heavy Refinery",
+    "88067": "Printer",
+    "88068": "Assembler",
+    "88069": "Mini Berth",
+    "88070": "Berth",
+    "88071": "Heavy Berth",
+    "87119": "Mini Printer",
+    "87120": "Heavy Printer",
+    "88093": "Shelter",
+    "88094": "Heavy Shelter",
+    "90184": "Relay",
+    "91871": "Nest",
+    "91978": "Nursery",
+}
+
 
 def get_watcher_assemblies(db: sqlite3.Connection) -> list[dict]:
     """Get all active Smart Assemblies owned by the Watcher.
@@ -45,7 +62,10 @@ def get_watcher_assemblies(db: sqlite3.Connection) -> list[dict]:
         assemblies.append(
             {
                 "assembly_id": row["assembly_id"],
-                "type": row["assembly_type"],
+                "type": ASSEMBLY_TYPE_NAMES.get(
+                    row["assembly_type"], row["assembly_type"]
+                ),
+                "type_id": row["assembly_type"],
                 "solar_system_id": row["solar_system_id"],
                 "solar_system_name": row["solar_system_name"] or "",
                 "state": row["state"],

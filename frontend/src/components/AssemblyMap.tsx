@@ -2,6 +2,23 @@ import { useEffect, useState } from 'react';
 import { api } from '../api';
 import type { AssemblyStats } from '../api';
 
+const TYPE_NAMES: Record<string, string> = {
+  '88063': 'Refinery',
+  '88064': 'Heavy Refinery',
+  '88067': 'Printer',
+  '88068': 'Assembler',
+  '88069': 'Mini Berth',
+  '88070': 'Berth',
+  '88071': 'Heavy Berth',
+  '87119': 'Mini Printer',
+  '87120': 'Heavy Printer',
+  '88093': 'Shelter',
+  '88094': 'Heavy Shelter',
+  '90184': 'Relay',
+  '91871': 'Nest',
+  '91978': 'Nursery',
+};
+
 const STATE_COLORS: Record<string, string> = {
   online: 'var(--eve-green)',
   anchored: 'var(--eve-blue)',
@@ -75,10 +92,12 @@ export function AssemblyMap() {
                 style={{ backgroundColor: STATE_COLORS[a.state] || 'var(--eve-dim)' }}
               />
               <span className="text-[var(--eve-text)]">
-                {a.solar_system_name || a.solar_system_id?.slice(0, 12) || 'Unknown'}
+                {TYPE_NAMES[a.type] || a.type}
               </span>
             </div>
-            <span className="text-[var(--eve-dim)]">{a.type}</span>
+            <span className="text-[var(--eve-dim)] font-mono text-[10px]">
+              {a.solar_system_name || a.solar_system_id?.slice(0, 8) || a.assembly_id?.slice(0, 10)}
+            </span>
           </div>
         ))}
       </div>
