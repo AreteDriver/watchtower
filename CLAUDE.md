@@ -19,6 +19,7 @@ Chain archaeology + AI intelligence platform. Reads the blockchain → entity do
 - **Bot**: Discord webhooks
 - **Deploy**: Fly.io (backend) + Vercel (frontend)
 - **Tests**: 495 passing, 80%+ coverage (pytest)
+- **Data sources**: Sui GraphQL (dynamic), World API static (system names)
 
 ### Data Flow
 
@@ -87,14 +88,17 @@ cd frontend && npx vercel --prod              # deploy frontend
 - [x] Gate jump indexer → `JumpEvent` (wired, no events yet this cycle)
 - [x] Character name resolution → `metadata.name` on Character objects
 - [x] Solar system name resolution → World API static `/v2/solarsystems` (24,502 names)
+- [x] Assembly locations → `LocationRevealedEvent` backfills solar_system + coordinates
 - [x] Dead World API calls removed (tribes, C5 endpoints)
 - [x] Periodic name re-bootstrap every 100 cycles
+- [x] All DEBT items S1-S14 resolved (except S8, S9 coverage)
 - [x] Live data confirmed flowing (18+ kills, 500+ assemblies, 1,320 characters)
 
 Key Sui data shapes:
 - Killmail: `key.item_id` → killmail_id, `killer_id.item_id` / `victim_id.item_id`, `solar_system_id.item_id`, `kill_timestamp` (unix str)
 - Character: `character_address` (wallet), `key.item_id` (in-game), `metadata.name`, `tribe_id`
-- Assembly: `assembly_id` (Sui obj), `type_id`, sender = owner
+- Assembly: `assembly_id` (Sui obj), `type_id`, sender = owner (location from LocationRevealedEvent)
+- LocationReveal: `assembly_id`, `solarsystem` (u64), `x`/`y`/`z` (strings)
 - Entities match on BOTH `smart_characters.address` and `smart_characters.character_id`
 
 ---

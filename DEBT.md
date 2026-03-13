@@ -24,7 +24,7 @@
 | S4 | **Dead World API calls every cycle** | `poller.py` | **FIXED** — Tribe/C5 calls removed |
 | S5 | **Warden entity_ids as bare string** | `warden.py:458` | **FIXED** — `json.dumps([entity_id])` |
 | S6 | **Hunting patterns queries victims not killers** | `warden.py:335-388` | **FIXED** — Queries `attacker_character_ids` JSON |
-| S7 | **Sui assemblies have no location data** — AssemblyCreatedEvent lacks solar_system | `sui_graphql.py:243-250` | OPEN — Query Assembly objects directly |
+| S7 | **Sui assemblies have no location data** | `sui_graphql.py` | **FIXED** — Index `LocationRevealedEvent` for solar_system + coordinates |
 
 ### MEDIUM — Coverage & Cleanup
 
@@ -32,11 +32,11 @@
 |---|---|---|---|
 | S8 | Discord bot at 10% test coverage | `discord_bot.py` — 249/276 uncovered | OPEN |
 | S9 | Oracle C5 alerts untested | `oracle.py:222-333` at 62% | OPEN |
-| S10 | `gate_created`/`gate_linked` declared but never polled | `sui_graphql.py:31-33` | OPEN |
-| S11 | StoryFeed.tsx bypasses api.ts for pagination | `StoryFeed.tsx:63-71` | OPEN |
-| S12 | Timeline URL construction bug — undefined in query params | `api.ts:414` | OPEN |
+| S10 | `gate_created`/`gate_linked` declared but never polled | `sui_graphql.py` | **FIXED** — Replaced with `location` event type |
+| S11 | StoryFeed.tsx bypasses api.ts for pagination | `StoryFeed.tsx` | **FIXED** — Uses `api.feed()` now |
+| S12 | Timeline URL construction bug — undefined in query params | `api.ts` | **FIXED** — URLSearchParams conditional building |
 | S13 | Killmail names always empty at ingest | `poller.py` | **FIXED** — Periodic re-bootstrap every 100 cycles |
-| S14 | `_ingest_subscriptions` receives no data from Sui | `poller.py:223-258` | OPEN |
+| S14 | `_ingest_subscriptions` receives no data from Sui | `poller.py` | **FIXED** — Dead call removed |
 
 ---
 
