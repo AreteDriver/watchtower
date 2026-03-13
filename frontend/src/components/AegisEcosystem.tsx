@@ -1,3 +1,5 @@
+import { ChainIntegrity } from './ChainIntegrity';
+
 const STATS: { value: string; label: string }[] = [
   { value: '17', label: 'DETECTION RULES' },
   { value: '4', label: 'CHECKER MODULES' },
@@ -183,6 +185,11 @@ export function AegisEcosystem() {
               github.com/AreteDriver/monolith &rarr;
             </a>
           </div>
+        </div>
+
+        {/* Live Chain Integrity Feed from Monolith */}
+        <div className="mt-4">
+          <ChainIntegrity />
         </div>
       </section>
     </>
