@@ -6,6 +6,11 @@ dist/
 build/
 .venv/
 
+# Move contract backups
+contracts/sui/Published.toml.bak*
+contracts/sui/Published.toml.disabled
+contracts/sui/Published.toml.v2
+
 # Environment
 .env
 *.env
