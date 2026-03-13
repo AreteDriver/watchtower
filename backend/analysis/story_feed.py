@@ -45,13 +45,20 @@ def _resolve_system_name(db, system_id: str) -> str:
     """Resolve a solar system ID to a display name."""
     if not system_id:
         return "unknown space"
+    # Primary: dedicated solar_systems lookup table
+    row = db.execute(
+        "SELECT name FROM solar_systems WHERE solar_system_id = ?",
+        (system_id,),
+    ).fetchone()
+    if row and row["name"]:
+        return row["name"]
+    # Fallback: smart_assemblies (legacy data)
     row = db.execute(
         "SELECT solar_system_name FROM smart_assemblies WHERE solar_system_id = ? LIMIT 1",
         (system_id,),
     ).fetchone()
     if row and row["solar_system_name"]:
         return row["solar_system_name"]
-    # Fallback: check killmails raw_json for system name, or truncate ID
     return system_id[:16]
 
 

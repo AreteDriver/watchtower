@@ -77,6 +77,62 @@ async def poll_endpoint(client: httpx.AsyncClient, endpoint: str) -> list[dict]:
     return all_items
 
 
+async def bootstrap_system_names(client: httpx.AsyncClient) -> int:
+    """Fetch all solar system names from World API static endpoint.
+
+    Populates the solar_systems lookup table. Only fetches if table is empty.
+    Returns count of systems loaded.
+    """
+    db = get_db()
+    existing = db.execute("SELECT COUNT(*) FROM solar_systems").fetchone()[0]
+    if existing > 0:
+        logger.info("Solar systems already loaded (%d), skipping bootstrap", existing)
+        return 0
+
+    base = settings.WORLD_API_STATIC
+    all_systems: list[dict] = []
+    offset = 0
+    page_size = 100
+    max_pages = 300  # 24,502 systems / 100 per page
+
+    for _ in range(max_pages):
+        try:
+            r = await client.get(
+                f"{base}/v2/solarsystems",
+                params={"limit": page_size, "offset": offset, "format": "json"},
+                timeout=15.0,
+            )
+            r.raise_for_status()
+            data = r.json()
+
+            items = data.get("data", []) if isinstance(data, dict) else data
+            if not items:
+                break
+            all_systems.extend(items)
+            offset += len(items)
+
+            if len(items) < page_size:
+                break
+        except Exception as e:
+            logger.error("System names fetch error at offset %d: %s", offset, e)
+            break
+
+    if all_systems:
+        for sys in all_systems:
+            sys_id = str(sys.get("id", ""))
+            name = sys.get("name", "")
+            if sys_id and name:
+                db.execute(
+                    "INSERT OR IGNORE INTO solar_systems (solar_system_id, name) "
+                    "VALUES (?, ?)",
+                    (sys_id, name),
+                )
+        db.commit()
+        logger.info("Bootstrapped %d solar system names from World API", len(all_systems))
+
+    return len(all_systems)
+
+
 def _ingest_killmails(db, killmails: list[dict]) -> int:
     """Ingest killmails from v2 API. Returns count of new records."""
     count = 0
@@ -927,6 +983,12 @@ async def run_poller() -> None:
                             )
             except Exception as e:
                 logger.error("Character name bootstrap error (continuing): %s", e)
+
+            # === Bootstrap: solar system names from World API static data ===
+            try:
+                await bootstrap_system_names(client)
+            except Exception as e:
+                logger.error("System names bootstrap error (continuing): %s", e)
 
             # === Reference data from Sui GraphQL (characters) ===
             # NOTE: World API is dead (NXDOMAIN since March 11, 2026).

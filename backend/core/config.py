@@ -4,8 +4,11 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    # World API — confirmed live endpoint (blockchain gateway)
+    # World API — dynamic endpoint dead (NXDOMAIN since March 11, 2026)
     WORLD_API_BASE: str = "https://blockchain-gateway-stillness.live.tech.evefrontier.com"
+
+    # World API static data (system names, types, constellations)
+    WORLD_API_STATIC: str = "https://world-api-stillness.live.tech.evefrontier.com"
 
     # Polling
     POLL_INTERVAL_SECONDS: int = 30

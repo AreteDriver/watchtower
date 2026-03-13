@@ -293,6 +293,12 @@ CREATE TABLE IF NOT EXISTS crowns (
     ingested_at INTEGER DEFAULT (unixepoch())
 );
 
+-- Solar system name lookup (from World API static data)
+CREATE TABLE IF NOT EXISTS solar_systems (
+    solar_system_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL
+);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_killmails_timestamp ON killmails(timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_killmails_system ON killmails(solar_system_id, timestamp DESC);

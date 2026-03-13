@@ -273,22 +273,30 @@ async def search_entities(
     ).fetchall()
     results = [dict(r) for r in rows]
 
-    # Also search solar systems (from smart_assemblies)
+    # Search solar systems (dedicated lookup table, fallback to assemblies)
     sys_rows = db.execute(
-        """SELECT solar_system_id, solar_system_name,
-                  COUNT(*) as assembly_count
-           FROM smart_assemblies
-           WHERE solar_system_name LIKE ? AND solar_system_name != ''
-           GROUP BY solar_system_id
-           ORDER BY assembly_count DESC LIMIT 5""",
+        """SELECT ss.solar_system_id, ss.name as solar_system_name
+           FROM solar_systems ss
+           WHERE ss.name LIKE ?
+           ORDER BY ss.name LIMIT 5""",
         (pattern,),
     ).fetchall()
+    if not sys_rows:
+        # Fallback: legacy smart_assemblies data
+        sys_rows = db.execute(
+            """SELECT solar_system_id, solar_system_name
+               FROM smart_assemblies
+               WHERE solar_system_name LIKE ? AND solar_system_name != ''
+               GROUP BY solar_system_id
+               ORDER BY solar_system_name LIMIT 5""",
+            (pattern,),
+        ).fetchall()
     for sr in sys_rows:
         results.append({
             "entity_id": sr["solar_system_id"],
             "entity_type": "system",
             "display_name": sr["solar_system_name"],
-            "event_count": sr["assembly_count"],
+            "event_count": 0,
         })
 
     return {"query": q, "results": results}

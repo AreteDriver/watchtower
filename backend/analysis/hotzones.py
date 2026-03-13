@@ -76,11 +76,13 @@ def get_hotzones(
 
     rows = db.execute(
         f"""SELECT k.solar_system_id,
-                   COALESCE(sa.solar_system_name, '') as solar_system_name,
+                   COALESCE(ss.name, sa.solar_system_name, '') as solar_system_name,
                    COUNT(*) as kills,
                    COUNT(DISTINCT k.victim_character_id) as unique_victims,
                    MAX(k.timestamp) as latest_kill
             FROM killmails k
+            LEFT JOIN solar_systems ss
+                ON k.solar_system_id = ss.solar_system_id
             LEFT JOIN smart_assemblies sa
                 ON k.solar_system_id = sa.solar_system_id
             WHERE k.solar_system_id != ''
@@ -213,14 +215,19 @@ def get_system_dossier(
     solar_system_id: str,
 ) -> dict:
     """Full intelligence dossier for a solar system."""
-    # System name from smart_assemblies
+    # System name from dedicated lookup table, fallback to assemblies
     name_row = db.execute(
-        "SELECT solar_system_name FROM smart_assemblies"
-        " WHERE solar_system_id = ? AND solar_system_name != ''"
-        " LIMIT 1",
+        "SELECT name FROM solar_systems WHERE solar_system_id = ?",
         (solar_system_id,),
     ).fetchone()
-    system_name = name_row["solar_system_name"] if name_row else ""
+    if not name_row:
+        name_row = db.execute(
+            "SELECT solar_system_name as name FROM smart_assemblies"
+            " WHERE solar_system_id = ? AND solar_system_name != ''"
+            " LIMIT 1",
+            (solar_system_id,),
+        ).fetchone()
+    system_name = name_row["name"] if name_row else ""
 
     # Kill stats
     kill_stats = db.execute(
