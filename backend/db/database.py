@@ -320,6 +320,7 @@ CREATE TABLE IF NOT EXISTS nexus_subscriptions (
     filters TEXT NOT NULL DEFAULT '{}',
     active INTEGER DEFAULT 1,
     secret TEXT NOT NULL,
+    wallet_address TEXT NOT NULL DEFAULT '',
     delivery_count INTEGER DEFAULT 0,
     last_delivered_at INTEGER,
     created_at INTEGER DEFAULT (unixepoch())
@@ -371,6 +372,7 @@ CREATE INDEX IF NOT EXISTS idx_crowns_type ON crowns(crown_type);
 MIGRATIONS = [
     "ALTER TABLE killmails ADD COLUMN cycle INTEGER DEFAULT 5",
     "ALTER TABLE gate_events ADD COLUMN cycle INTEGER DEFAULT 5",
+    "ALTER TABLE nexus_subscriptions ADD COLUMN wallet_address TEXT NOT NULL DEFAULT ''",
 ]
 
 _connection: sqlite3.Connection | None = None

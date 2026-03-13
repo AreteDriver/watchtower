@@ -19,6 +19,7 @@ from backend.analysis.fingerprint import build_fingerprint, compare_fingerprints
 from backend.analysis.hotzones import get_hotzones, get_system_activity, get_system_dossier
 from backend.analysis.kill_graph import build_kill_graph
 from backend.analysis.narrative import generate_battle_report, generate_dossier_narrative
+from backend.analysis.nexus import get_quota_usage
 from backend.analysis.reputation import compute_reputation
 from backend.analysis.streaks import compute_streaks, get_hot_streaks
 from backend.analysis.subscriptions import check_subscription, record_subscription
@@ -817,25 +818,53 @@ def _validate_nexus_endpoint(url: str) -> None:
 async def nexus_subscribe(request: Request, req: NexusSubscribeRequest):
     """Register a NEXUS webhook subscription.
 
-    Returns API key and HMAC secret. Store the secret — it cannot be
-    retrieved again. Use it to verify X-Nexus-Signature on deliveries.
+    Requires Oracle tier (2) or higher. Returns API key and HMAC secret.
+    Store the secret — it cannot be retrieved again.
     """
+    check_tier_access(request, "nexus_subscribe")
     _validate_nexus_endpoint(req.endpoint_url)
 
-    from backend.analysis.nexus import generate_api_key, generate_secret
+    wallet = request.headers.get("X-Wallet-Address", "")
+    if not wallet:
+        raise HTTPException(403, "Wallet address required for NEXUS subscriptions.")
+
+    from backend.analysis.nexus import (
+        check_subscription_quota,
+        generate_api_key,
+        generate_secret,
+    )
+
+    db = get_db()
+
+    # Get wallet tier
+    sub_info = check_subscription(db, wallet)
+    tier = sub_info["tier"] if sub_info["active"] else 0
+
+    # Check quota
+    quota = check_subscription_quota(db, wallet, tier)
+    if not quota["allowed"]:
+        raise HTTPException(
+            403,
+            f"Subscription limit reached ({quota['current']}/{quota['max']}). "
+            f"Upgrade tier for more subscriptions.",
+        )
 
     api_key = generate_api_key()
     secret = generate_secret()
 
-    db = get_db()
     db.execute(
         """INSERT INTO nexus_subscriptions
-           (api_key, name, endpoint_url, filters, secret)
-           VALUES (?, ?, ?, ?, ?)""",
-        (api_key, req.name, req.endpoint_url, json.dumps(req.filters), secret),
+           (api_key, name, endpoint_url, filters, secret, wallet_address)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (api_key, req.name, req.endpoint_url, json.dumps(req.filters), secret, wallet),
     )
     db.commit()
-    logger.info("NEXUS subscription created: %s → %s", req.name, req.endpoint_url)
+    logger.info(
+        "NEXUS subscription created: %s → %s (wallet=%s)",
+        req.name,
+        req.endpoint_url,
+        wallet[:16],
+    )
 
     return {
         "status": "subscribed",
@@ -845,6 +874,16 @@ async def nexus_subscribe(request: Request, req: NexusSubscribeRequest):
         "endpoint_url": req.endpoint_url,
         "filters": req.filters,
     }
+
+
+@router.get("/nexus/quota")
+async def nexus_quota(request: Request):
+    """Get NEXUS quota usage for the connected wallet."""
+    wallet = request.headers.get("X-Wallet-Address", "")
+    if not wallet:
+        raise HTTPException(403, "Wallet address required.")
+    db = get_db()
+    return get_quota_usage(db, wallet)
 
 
 @router.get("/nexus/subscriptions")

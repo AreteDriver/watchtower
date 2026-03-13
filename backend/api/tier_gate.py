@@ -19,6 +19,7 @@ _GATED_ROUTES = {
     "create_watch": "/watches",
     "create_battle_report": "/battle-report",
     "get_kill_graph": "/kill-graph",
+    "nexus_subscribe": "/nexus/subscribe",
 }
 
 

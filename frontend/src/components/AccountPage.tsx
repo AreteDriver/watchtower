@@ -2,13 +2,13 @@ import { useEffect, useState } from 'react';
 import { ConnectButton } from '@mysten/dapp-kit';
 import { useAuth, TIER_LABELS } from '../contexts/AuthContext';
 import { api } from '../api';
-import type { WatchData, AlertData, NexusSubscription, NexusDelivery } from '../api';
+import type { WatchData, AlertData, NexusSubscription, NexusDelivery, NexusQuota } from '../api';
 
 const TIER_FEATURES: Record<number, string[]> = {
   0: ['Entity search', 'Story feed', 'Leaderboards', 'Kill streaks'],
   1: ['Behavioral fingerprints', 'Reputation scores', 'Fingerprint compare', 'Hotzones'],
-  2: ['AI narratives', 'Oracle watches', 'Battle reports', 'Corp intel'],
-  3: ['Kill graph network', 'Alt detection', 'Full API access', 'Priority support'],
+  2: ['AI narratives', 'Oracle watches', 'Battle reports', 'Corp intel', 'NEXUS webhooks (2 subs, 100/day)'],
+  3: ['Kill graph network', 'Alt detection', 'Full API access', 'Priority support', 'NEXUS webhooks (10 subs, 1K/day)'],
 };
 
 function formatExpiry(ts: number): string {
@@ -55,6 +55,7 @@ export function AccountPage() {
   const [nexusFilterSystems, setNexusFilterSystems] = useState('');
   const [nexusError, setNexusError] = useState('');
   const [showDeliveries, setShowDeliveries] = useState(false);
+  const [nexusQuota, setNexusQuota] = useState<NexusQuota | null>(null);
 
   useEffect(() => {
     if (!wallet) return;
@@ -62,6 +63,7 @@ export function AccountPage() {
     Promise.all([
       api.watches(wallet).then((d) => setWatches(d.watches)).catch(() => setWatches([])),
       api.alerts(wallet).then((d) => setAlerts(d.alerts)).catch(() => setAlerts([])),
+      api.nexusQuota().then((d) => setNexusQuota(d)).catch(() => setNexusQuota(null)),
     ]).finally(() => setLoadingWatches(false));
   }, [wallet]);
 
@@ -403,6 +405,37 @@ export function AccountPage() {
           with resolved names, system data, and intelligence when matching events are indexed.
         </p>
 
+        {/* Quota display */}
+        {nexusQuota && (
+          <div className="grid grid-cols-2 gap-3">
+            <div className="border border-[var(--eve-border)] rounded p-2">
+              <div className="text-[10px] text-[var(--eve-dim)] uppercase">Subscriptions</div>
+              <div className="text-sm text-[var(--eve-text)] font-mono">
+                {nexusQuota.subscriptions_used} / {nexusQuota.subscriptions_max}
+              </div>
+            </div>
+            <div className="border border-[var(--eve-border)] rounded p-2">
+              <div className="text-[10px] text-[var(--eve-dim)] uppercase">Deliveries Today</div>
+              <div className="text-sm text-[var(--eve-text)] font-mono">
+                {nexusQuota.deliveries_today} / {nexusQuota.deliveries_max}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tier gate message */}
+        {currentTier < 2 && (
+          <div className="border border-[var(--eve-orange,#FF6600)] rounded p-3 text-center space-y-1">
+            <div className="text-xs font-bold text-[var(--eve-orange,#FF6600)]">
+              Oracle Tier Required
+            </div>
+            <p className="text-[10px] text-[var(--eve-dim)]">
+              NEXUS webhooks require Oracle (Tier 2) or higher.
+              Transfer items to a Watcher Assembly in-game to upgrade.
+            </p>
+          </div>
+        )}
+
         {/* Secret reveal (one-time after creation) */}
         {nexusSecret && (
           <div className="border border-[var(--eve-orange,#FF6600)] rounded p-3 space-y-1">
@@ -462,14 +495,17 @@ export function AccountPage() {
         )}
 
         {/* Create new subscription */}
-        {!showNexusForm ? (
+        {currentTier >= 2 && !showNexusForm ? (
           <button
             onClick={() => setShowNexusForm(true)}
+            disabled={nexusQuota !== null && nexusQuota.subscriptions_used >= nexusQuota.subscriptions_max}
             className="w-full px-3 py-1.5 text-xs font-bold border border-[var(--eve-blue,#3B82F6)]
                        text-[var(--eve-blue,#3B82F6)] rounded hover:bg-[var(--eve-blue,#3B82F6)]
-                       hover:text-[var(--eve-bg)] transition-colors"
+                       hover:text-[var(--eve-bg)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            + New Subscription
+            {nexusQuota && nexusQuota.subscriptions_used >= nexusQuota.subscriptions_max
+              ? `Limit Reached (${nexusQuota.subscriptions_used}/${nexusQuota.subscriptions_max})`
+              : '+ New Subscription'}
           </button>
         ) : (
           <div className="border border-[var(--eve-border)] rounded p-3 space-y-3">

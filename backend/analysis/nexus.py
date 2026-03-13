@@ -31,6 +31,14 @@ RETRY_BACKOFF = [1, 5, 15]  # seconds
 CIRCUIT_BREAKER_THRESHOLD = 10
 DELIVERY_TIMEOUT = 10
 
+# Tier-based quotas
+TIER_LIMITS: dict[int, dict[str, int]] = {
+    0: {"max_subscriptions": 0, "max_deliveries_day": 0},  # Free
+    1: {"max_subscriptions": 0, "max_deliveries_day": 0},  # Scout
+    2: {"max_subscriptions": 2, "max_deliveries_day": 100},  # Oracle
+    3: {"max_subscriptions": 10, "max_deliveries_day": 1000},  # Spymaster
+}
+
 
 def generate_api_key() -> str:
     """Generate a NEXUS API key."""
@@ -45,6 +53,105 @@ def generate_secret() -> str:
 def sign_payload(secret: str, payload: str) -> str:
     """HMAC-SHA256 sign a payload."""
     return hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdigest()
+
+
+def check_subscription_quota(db, wallet: str, tier: int) -> dict:
+    """Check if a wallet can create more NEXUS subscriptions.
+
+    Returns {"allowed": bool, "current": int, "max": int, "tier": int}.
+    """
+    limits = TIER_LIMITS.get(tier, TIER_LIMITS[0])
+    max_subs = limits["max_subscriptions"]
+
+    # Count subs owned by this wallet
+    rows = db.execute(
+        "SELECT COUNT(*) as cnt FROM nexus_subscriptions WHERE wallet_address = ?",
+        (wallet,),
+    ).fetchone()
+    if rows:
+        count = rows["cnt"]
+
+    return {
+        "allowed": count < max_subs,
+        "current": count,
+        "max": max_subs,
+        "tier": tier,
+    }
+
+
+def check_delivery_quota(db, subscription_id: int) -> bool:
+    """Check if a subscription has remaining daily delivery quota.
+
+    Returns True if delivery is allowed.
+    """
+    sub = db.execute(
+        "SELECT wallet_address FROM nexus_subscriptions WHERE id = ?",
+        (subscription_id,),
+    ).fetchone()
+    if not sub or not sub["wallet_address"]:
+        return True  # No wallet linked, allow (backward compat)
+
+    # Get wallet's tier
+    wallet = sub["wallet_address"]
+    tier_row = db.execute(
+        "SELECT tier, expires_at FROM watcher_subscriptions WHERE wallet_address = ?",
+        (wallet,),
+    ).fetchone()
+
+    tier = 0
+    if tier_row and tier_row["expires_at"] > int(time.time()):
+        tier = tier_row["tier"]
+
+    limits = TIER_LIMITS.get(tier, TIER_LIMITS[0])
+    max_daily = limits["max_deliveries_day"]
+    if max_daily == 0:
+        return False
+
+    # Count today's deliveries across all subs for this wallet
+    day_ago = int(time.time()) - 86400
+    today_count = db.execute(
+        """SELECT COUNT(*) as cnt FROM nexus_deliveries d
+           JOIN nexus_subscriptions s ON d.subscription_id = s.id
+           WHERE s.wallet_address = ? AND d.delivered_at > ? AND d.success = 1""",
+        (wallet, day_ago),
+    ).fetchone()
+
+    return (today_count["cnt"] if today_count else 0) < max_daily
+
+
+def get_quota_usage(db, wallet: str) -> dict:
+    """Get current quota usage for a wallet. Used by Account page."""
+    tier_row = db.execute(
+        "SELECT tier, expires_at FROM watcher_subscriptions WHERE wallet_address = ?",
+        (wallet,),
+    ).fetchone()
+
+    tier = 0
+    if tier_row and tier_row["expires_at"] > int(time.time()):
+        tier = tier_row["tier"]
+
+    limits = TIER_LIMITS.get(tier, TIER_LIMITS[0])
+
+    sub_count = db.execute(
+        "SELECT COUNT(*) as cnt FROM nexus_subscriptions WHERE wallet_address = ?",
+        (wallet,),
+    ).fetchone()
+
+    day_ago = int(time.time()) - 86400
+    delivery_count = db.execute(
+        """SELECT COUNT(*) as cnt FROM nexus_deliveries d
+           JOIN nexus_subscriptions s ON d.subscription_id = s.id
+           WHERE s.wallet_address = ? AND d.delivered_at > ? AND d.success = 1""",
+        (wallet, day_ago),
+    ).fetchone()
+
+    return {
+        "tier": tier,
+        "subscriptions_used": sub_count["cnt"] if sub_count else 0,
+        "subscriptions_max": limits["max_subscriptions"],
+        "deliveries_today": delivery_count["cnt"] if delivery_count else 0,
+        "deliveries_max": limits["max_deliveries_day"],
+    }
 
 
 def match_filters(filters: dict, event: dict) -> bool:
@@ -160,6 +267,11 @@ async def dispatch_event(event: dict) -> int:
             continue
 
         if not match_filters(filters, event):
+            continue
+
+        # Check delivery quota before enriching/delivering
+        if not check_delivery_quota(db, sub["id"]):
+            logger.debug("NEXUS delivery quota exceeded for subscription %d", sub["id"])
             continue
 
         # Enrich once, reuse for all matching subs

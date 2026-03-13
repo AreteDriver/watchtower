@@ -6,6 +6,7 @@ import sqlite3
 import pytest
 
 from backend.analysis.nexus import (
+    TIER_LIMITS,
     generate_api_key,
     generate_secret,
     match_filters,
@@ -165,3 +166,26 @@ def test_match_combined_filters():
 def test_match_no_filters_matches_all():
     assert match_filters(None, {"event_type": "anything"})
     assert match_filters({}, {"event_type": "anything"})
+
+
+# -- Tier limits --
+
+
+def test_tier_limits_free_blocked():
+    assert TIER_LIMITS[0]["max_subscriptions"] == 0
+    assert TIER_LIMITS[0]["max_deliveries_day"] == 0
+
+
+def test_tier_limits_scout_blocked():
+    assert TIER_LIMITS[1]["max_subscriptions"] == 0
+
+
+def test_tier_limits_oracle_has_quota():
+    assert TIER_LIMITS[2]["max_subscriptions"] == 2
+    assert TIER_LIMITS[2]["max_deliveries_day"] == 100
+
+
+def test_tier_limits_spymaster_highest():
+    assert TIER_LIMITS[3]["max_subscriptions"] == 10
+    assert TIER_LIMITS[3]["max_deliveries_day"] == 1000
+    assert TIER_LIMITS[3]["max_subscriptions"] > TIER_LIMITS[2]["max_subscriptions"]

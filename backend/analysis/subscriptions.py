@@ -136,6 +136,7 @@ def get_tier_for_endpoint(endpoint: str) -> int:
         "/entity/{entity_id}/narrative": TIER_ORACLE,
         "/watches": TIER_ORACLE,
         "/battle-report": TIER_ORACLE,
+        "/nexus/subscribe": TIER_ORACLE,
         # Spymaster tier
         "/kill-graph": TIER_SPYMASTER,
     }

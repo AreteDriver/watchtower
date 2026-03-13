@@ -282,6 +282,14 @@ export interface NexusSubscribeResponse {
   filters: Record<string, unknown>;
 }
 
+export interface NexusQuota {
+  tier: number;
+  subscriptions_used: number;
+  subscriptions_max: number;
+  deliveries_today: number;
+  deliveries_max: number;
+}
+
 export interface NexusDelivery {
   id: number;
   event_type: string;
@@ -532,6 +540,7 @@ export const api = {
     fetchJson<SystemDossier>(`/system/${systemId}`),
 
   // NEXUS
+  nexusQuota: () => fetchJson<NexusQuota>('/nexus/quota'),
   nexusSubscribe: (name: string, endpointUrl: string, filters: Record<string, unknown> = {}) =>
     postJson<NexusSubscribeResponse>('/nexus/subscribe', {
       name, endpoint_url: endpointUrl, filters,
