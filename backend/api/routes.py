@@ -18,7 +18,11 @@ from backend.analysis.entity_resolver import resolve_entity
 from backend.analysis.fingerprint import build_fingerprint, compare_fingerprints
 from backend.analysis.hotzones import get_hotzones, get_system_activity, get_system_dossier
 from backend.analysis.kill_graph import build_kill_graph
-from backend.analysis.narrative import generate_battle_report, generate_dossier_narrative
+from backend.analysis.narrative import (
+    generate_battle_report,
+    generate_dossier_narrative,
+    generate_system_narrative,
+)
 from backend.analysis.nexus import get_quota_usage
 from backend.analysis.reputation import compute_reputation
 from backend.analysis.streaks import compute_streaks, get_hot_streaks
@@ -344,6 +348,14 @@ async def get_entity_narrative(request: Request, entity_id: str):
     check_tier_access(request, "get_entity_narrative")
     narrative = generate_dossier_narrative(entity_id)
     return {"entity_id": entity_id, "narrative": narrative}
+
+
+@router.get("/system/{system_id}/narrative")
+@limiter.limit("20/minute")
+async def get_system_narrative(request: Request, system_id: str):
+    check_tier_access(request, "get_system_narrative")
+    narrative = generate_system_narrative(system_id)
+    return {"system_id": system_id, "narrative": narrative}
 
 
 @router.get("/kill-graph")

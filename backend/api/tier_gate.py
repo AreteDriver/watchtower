@@ -16,6 +16,7 @@ _GATED_ROUTES = {
     "get_entity_reputation": "/entity/{entity_id}/reputation",
     "compare_entity_fingerprints": "/fingerprint/compare",
     "get_entity_narrative": "/entity/{entity_id}/narrative",
+    "get_system_narrative": "/system/{system_id}/narrative",
     "create_watch": "/watches",
     "create_battle_report": "/battle-report",
     "get_kill_graph": "/kill-graph",

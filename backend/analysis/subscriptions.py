@@ -134,6 +134,7 @@ def get_tier_for_endpoint(endpoint: str) -> int:
         "/fingerprint/compare": TIER_SCOUT,
         # Oracle tier
         "/entity/{entity_id}/narrative": TIER_ORACLE,
+        "/system/{system_id}/narrative": TIER_SCOUT,
         "/watches": TIER_ORACLE,
         "/battle-report": TIER_ORACLE,
         "/nexus/subscribe": TIER_ORACLE,

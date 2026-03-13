@@ -1,4 +1,14 @@
+import { useEffect, useState } from 'react';
 import { ChainIntegrity } from './ChainIntegrity';
+
+const MONOLITH_API = 'https://monolith-evefrontier.fly.dev/api';
+
+interface MonolithAnomaly {
+  anomaly_id: string;
+  anomaly_type: string;
+  severity: string;
+  detected_at: number;
+}
 
 const STATS: { value: string; label: string }[] = [
   { value: '17', label: 'DETECTION RULES' },
@@ -14,6 +24,15 @@ const TAGS: { label: string; variant: 'live' | 'default' }[] = [
 ];
 
 export function AegisEcosystem() {
+  const [anomalies, setAnomalies] = useState<MonolithAnomaly[]>([]);
+
+  useEffect(() => {
+    fetch(`${MONOLITH_API}/anomalies?limit=10`)
+      .then((r) => r.json())
+      .then((d) => setAnomalies(d.data || []))
+      .catch(() => setAnomalies([]));
+  }, []);
+
   return (
     <>
       <style>{`
@@ -191,6 +210,43 @@ export function AegisEcosystem() {
         <div className="mt-4">
           <ChainIntegrity />
         </div>
+
+        {/* Monolith Anomaly Feed */}
+        {anomalies.length > 0 && (
+          <div className="mt-4 rounded-lg p-4"
+            style={{ background: 'var(--eve-surface)', borderLeft: '2px solid #7F77DD', border: '1px solid var(--eve-border)', borderLeftWidth: '2px', borderLeftColor: '#7F77DD' }}
+          >
+            <h3 className="aegis-mono text-[10px] uppercase tracking-[0.2em] font-bold mb-3"
+              style={{ color: '#7F77DD' }}
+            >
+              Chain Integrity &mdash; Monolith ({anomalies.length})
+            </h3>
+            <div className="space-y-1.5">
+              {anomalies.map((a) => {
+                const sevColor = a.severity === 'CRITICAL' ? 'var(--eve-red)' :
+                  a.severity === 'HIGH' ? '#f59e0b' : 'var(--eve-dim)';
+                return (
+                  <div key={a.anomaly_id} className="flex items-center justify-between text-xs py-0.5">
+                    <div className="flex items-center gap-2">
+                      <span className="aegis-mono font-bold" style={{ color: sevColor }}>
+                        {a.severity}
+                      </span>
+                      <span className="text-[var(--eve-text)]">
+                        {a.anomaly_type.replace(/_/g, ' ')}
+                      </span>
+                    </div>
+                    <span className="text-[var(--eve-dim)] aegis-mono text-[10px]">
+                      {new Date(a.detected_at * 1000).toLocaleDateString()}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="text-[10px] text-[var(--eve-dim)] mt-2 opacity-60">
+              Anomalies detected by Monolith integrity monitor
+            </div>
+          </div>
+        )}
       </section>
     </>
   );

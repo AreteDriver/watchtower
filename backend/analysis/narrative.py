@@ -63,6 +63,30 @@ Write a 2-3 paragraph dossier covering:
 2. Notable patterns, events, or behaviors
 3. Current status and what to watch for"""
 
+SYSTEM_DOSSIER_USER = """Write a system intelligence briefing for this solar system in EVE Frontier.
+
+SYSTEM: {system_name} ({system_id})
+
+COMBAT DATA:
+- Total kills: {kill_count}
+- Kills (24h): {kills_24h}
+- Kills (7d): {kills_7d}
+- Unique attackers: {unique_attackers}
+- Unique victims: {unique_victims}
+- Gate transits: {gate_transits}
+- Danger level: {danger_level}
+
+TOP ATTACKERS:
+{top_attackers_json}
+
+INFRASTRUCTURE:
+- Smart assemblies in system: {assembly_count}
+
+Write a 2-3 paragraph system intelligence briefing covering:
+1. The system's strategic significance and threat profile
+2. Notable patterns — who operates here, when activity peaks, how dangerous transit is
+3. Recommendations for pilots entering this system"""
+
 BATTLE_SYSTEM = """You are a tactical analyst for EVE Frontier.
 You reconstruct engagements from on-chain event sequences.
 Think like an NTSB investigator — methodical, evidence-based,
@@ -260,6 +284,180 @@ def generate_dossier_narrative(entity_id: str) -> str:
     except Exception as e:
         logger.error("Narrative generation failed: %s", e)
         return _template_narrative(profile_data)
+
+
+def _template_system_narrative(system_name: str, stats: dict) -> str:
+    """Generate a template-based system narrative when no AI API key is available."""
+    kill_count = stats.get("total_kills", 0)
+    danger = stats.get("danger_level", "unknown")
+    attackers = stats.get("unique_attackers", 0)
+    victims = stats.get("unique_victims", 0)
+    gate_transits = stats.get("gate_transits", 0)
+    assembly_count = stats.get("assembly_count", 0)
+    top_attackers = stats.get("top_attackers", [])
+
+    parts = []
+
+    if kill_count == 0:
+        parts.append(
+            f"{system_name} shows no recorded kill activity. This system appears "
+            f"to be either uninhabited or a peaceful transit corridor."
+        )
+        if gate_transits > 0:
+            parts.append(
+                f"With {gate_transits} gate transits recorded, pilots pass through "
+                f"without incident — for now."
+            )
+    else:
+        parts.append(
+            f"{system_name} carries a {danger} threat rating with {kill_count} "
+            f"confirmed kills on record. {attackers} unique attackers have operated "
+            f"here, claiming {victims} distinct victims."
+        )
+        if top_attackers:
+            names = [a.get("display_name", "Unknown") for a in top_attackers[:3]]
+            parts.append(
+                f"The most lethal operators in this system include: {', '.join(names)}. "
+                f"Pilots transiting should exercise caution and check recent activity."
+            )
+
+    if assembly_count > 0:
+        parts.append(
+            f"Infrastructure scan reveals {assembly_count} smart "
+            f"assembl{'y' if assembly_count == 1 else 'ies'} "
+            f"deployed in system, indicating active territorial investment."
+        )
+
+    return "\n\n".join(parts)
+
+
+def generate_system_narrative(system_id: str) -> str:
+    """Generate a system intelligence briefing. Uses AI when available, templates otherwise."""
+    db = get_db()
+
+    # Get system name
+    sys_row = db.execute(
+        "SELECT name FROM solar_systems WHERE solar_system_id = ?", (system_id,)
+    ).fetchone()
+    system_name = sys_row["name"] if sys_row else system_id[:16]
+
+    # Gather system stats
+    kill_row = db.execute(
+        """SELECT COUNT(*) as total_kills,
+                  COUNT(DISTINCT victim_character_id) as unique_victims,
+                  SUM(CASE WHEN timestamp > ? THEN 1 ELSE 0 END) as kills_24h,
+                  SUM(CASE WHEN timestamp > ? THEN 1 ELSE 0 END) as kills_7d
+           FROM killmails WHERE solar_system_id = ?""",
+        (
+            int(__import__("time").time()) - 86400,
+            int(__import__("time").time()) - 7 * 86400,
+            system_id,
+        ),
+    ).fetchone()
+
+    unique_attackers_row = db.execute(
+        """SELECT COUNT(DISTINCT attacker_character_ids) as cnt
+           FROM killmails WHERE solar_system_id = ?""",
+        (system_id,),
+    ).fetchone()
+
+    gate_row = db.execute(
+        "SELECT COUNT(*) as cnt FROM gate_events WHERE solar_system_id = ?",
+        (system_id,),
+    ).fetchone()
+
+    assembly_row = db.execute(
+        "SELECT COUNT(*) as cnt FROM smart_assemblies WHERE solar_system_id = ?",
+        (system_id,),
+    ).fetchone()
+
+    top_attackers = db.execute(
+        """SELECT e.entity_id, e.display_name, COUNT(*) as kills
+           FROM killmails k
+           JOIN entities e ON e.entity_id IN (
+               SELECT value FROM json_each(k.attacker_character_ids)
+           )
+           WHERE k.solar_system_id = ?
+           GROUP BY e.entity_id
+           ORDER BY kills DESC LIMIT 5""",
+        (system_id,),
+    ).fetchall()
+    top_attackers_list = [dict(r) for r in top_attackers]
+
+    # Determine danger level
+    total_kills = kill_row["total_kills"] if kill_row else 0
+    if total_kills >= 50:
+        danger_level = "extreme"
+    elif total_kills >= 20:
+        danger_level = "high"
+    elif total_kills >= 5:
+        danger_level = "moderate"
+    elif total_kills > 0:
+        danger_level = "low"
+    else:
+        danger_level = "minimal"
+
+    stats = {
+        "total_kills": total_kills,
+        "unique_victims": kill_row["unique_victims"] if kill_row else 0,
+        "unique_attackers": unique_attackers_row["cnt"] if unique_attackers_row else 0,
+        "kills_24h": kill_row["kills_24h"] if kill_row else 0,
+        "kills_7d": kill_row["kills_7d"] if kill_row else 0,
+        "gate_transits": gate_row["cnt"] if gate_row else 0,
+        "assembly_count": assembly_row["cnt"] if assembly_row else 0,
+        "danger_level": danger_level,
+        "top_attackers": top_attackers_list,
+    }
+
+    # Check cache
+    eh = _event_hash({"system_id": system_id, "stats": stats})
+    cached = _get_cached(db, system_id, "system_dossier", eh)
+    if cached:
+        return cached
+
+    # Fallback to template if no API key
+    if not settings.ANTHROPIC_API_KEY:
+        content = _template_system_narrative(system_name, stats)
+        _store_cache(db, system_id, "system_dossier", eh, content)
+        return content
+
+    # Generate with AI
+    try:
+        client = _get_client()
+        msg = client.messages.create(
+            model="claude-sonnet-4-5",
+            max_tokens=1024,
+            system=DOSSIER_SYSTEM,
+            messages=[
+                {
+                    "role": "user",
+                    "content": SYSTEM_DOSSIER_USER.format(
+                        system_name=system_name,
+                        system_id=system_id,
+                        kill_count=stats["total_kills"],
+                        kills_24h=stats["kills_24h"],
+                        kills_7d=stats["kills_7d"],
+                        unique_attackers=stats["unique_attackers"],
+                        unique_victims=stats["unique_victims"],
+                        gate_transits=stats["gate_transits"],
+                        danger_level=danger_level,
+                        top_attackers_json=json.dumps(top_attackers_list, indent=2),
+                        assembly_count=stats["assembly_count"],
+                    ),
+                }
+            ],
+        )
+        content = msg.content[0].text
+        _track_usage(msg, "system_dossier", system_id)
+        _store_cache(db, system_id, "system_dossier", eh, content)
+        logger.info("Generated system narrative for %s", system_id)
+        return content
+    except ValueError:
+        logger.exception("System narrative generation error")
+        return "System narrative temporarily unavailable."
+    except Exception as e:
+        logger.error("System narrative generation failed: %s", e)
+        return _template_system_narrative(system_name, stats)
 
 
 def generate_battle_report(events: list[dict]) -> dict:
