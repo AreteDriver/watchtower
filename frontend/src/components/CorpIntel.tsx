@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router';
 import { api } from '../api';
 import type { CorpData, CorpRivalry } from '../api';
 
@@ -37,11 +38,15 @@ export function CorpIntel() {
             <div key={i} className="bg-red-900/20 border border-red-900/40 rounded p-2 text-sm">
               <div className="flex justify-between items-center">
                 <div className="flex gap-2 items-center">
-                  <span className="text-[var(--eve-green)]">{r.corp_1.slice(0, 12)}</span>
+                  <Link to={`/corp/${r.corp_1}`} className="text-[var(--eve-green)] hover:underline">
+                    {r.corp_1.slice(0, 12)}
+                  </Link>
                   <span className="text-[var(--eve-red)] font-bold">{r.kills_1_to_2}</span>
                   <span className="text-[var(--eve-dim)]">vs</span>
                   <span className="text-[var(--eve-red)] font-bold">{r.kills_2_to_1}</span>
-                  <span className="text-[var(--eve-green)]">{r.corp_2.slice(0, 12)}</span>
+                  <Link to={`/corp/${r.corp_2}`} className="text-[var(--eve-green)] hover:underline">
+                    {r.corp_2.slice(0, 12)}
+                  </Link>
                 </div>
                 <span className="text-xs text-[var(--eve-dim)]">{r.total} mutual kills</span>
               </div>
@@ -58,9 +63,11 @@ export function CorpIntel() {
           </h3>
           <div className="space-y-1">
             {corps.slice(0, 15).map((c, i) => (
-              <div
+              <Link
                 key={c.corp_id}
-                className="bg-[var(--eve-surface)] border border-[var(--eve-border)] rounded px-3 py-2 flex justify-between items-center"
+                to={`/corp/${c.corp_id}`}
+                className="bg-[var(--eve-surface)] border border-[var(--eve-border)] rounded px-3 py-2
+                           flex justify-between items-center hover:border-[var(--eve-green)] transition-colors block"
               >
                 <div className="flex gap-3 items-center">
                   <span className="text-xs text-[var(--eve-dim)] w-5">{i + 1}</span>
@@ -72,7 +79,7 @@ export function CorpIntel() {
                   <span className="text-[var(--eve-dim)]">{c.total_deaths} deaths</span>
                   <span className="text-[var(--eve-text)]">{(c.kill_ratio * 100).toFixed(0)}% KR</span>
                 </div>
-              </div>
+              </Link>
             ))}
           </div>
         </div>

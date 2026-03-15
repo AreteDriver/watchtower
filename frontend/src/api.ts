@@ -184,6 +184,21 @@ export interface CorpData {
   kill_ratio: number;
 }
 
+export interface CorpProfile {
+  corp_id: string;
+  tribe_name: string | null;
+  tribe_short: string | null;
+  member_count: number;
+  active_members: number;
+  total_kills: number;
+  total_deaths: number;
+  kill_ratio: number;
+  systems: string[];
+  system_count: number;
+  top_killers: { entity_id: string; display_name: string; kills: number }[];
+  threat_level: string;
+}
+
 export interface CorpRivalry {
   corp_1: string;
   corp_2: string;
@@ -471,6 +486,7 @@ export const api = {
   streak: (id: string) => fetchJson<StreakData>(`/entity/${id}/streak`),
   hotStreaks: () => fetchJson<{ streaks: StreakData[] }>('/streaks'),
   corps: () => fetchJson<{ corps: CorpData[] }>('/corps'),
+  corp: (corpId: string) => fetchJson<CorpProfile>(`/corp/${corpId}`),
   corpRivalries: () => fetchJson<{ rivalries: CorpRivalry[] }>('/corps/rivalries'),
   reputation: (id: string) => fetchJson<ReputationData>(`/entity/${id}/reputation`),
   assemblies: () => fetchJson<AssemblyStats>('/assemblies'),

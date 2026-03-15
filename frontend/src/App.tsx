@@ -21,6 +21,7 @@ import { AssemblyMap } from './components/AssemblyMap';
 import { WalletConnect } from './components/WalletConnect';
 import { AccountPage } from './components/AccountPage';
 import { EntityPage } from './components/EntityPage';
+import { CorpPage } from './components/CorpPage';
 import { TierGate } from './components/TierGate';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { CycleBanner } from './components/CycleBanner';
@@ -355,6 +356,11 @@ export default function App() {
           <Route path="/entity/:entityId" element={
             <ErrorBoundary>
               <EntityPage />
+            </ErrorBoundary>
+          } />
+          <Route path="/corp/:corpId" element={
+            <ErrorBoundary>
+              <CorpPage />
             </ErrorBoundary>
           } />
           <Route path="/system/:systemId" element={
