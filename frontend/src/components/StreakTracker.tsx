@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router';
 import { api } from '../api';
 import type { StreakData } from '../api';
 
@@ -26,7 +27,7 @@ function StreakBar({ value, max, color }: { value: number; max: number; color: s
   );
 }
 
-export function StreakTracker({ entityId, onSelect }: Props) {
+export function StreakTracker({ entityId }: Props) {
   const [entityStreak, setEntityStreak] = useState<StreakData | null>(null);
   const [hotStreaks, setHotStreaks] = useState<StreakData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -109,12 +110,12 @@ export function StreakTracker({ entityId, onSelect }: Props) {
                   className="bg-[var(--eve-surface)] border border-[var(--eve-border)] rounded px-3 py-2"
                 >
                   <div className="flex justify-between items-center mb-1">
-                    <button
-                      onClick={() => onSelect?.(s.entity_id)}
+                    <Link
+                      to={`/entity/${s.entity_id}`}
                       className="text-sm text-[var(--eve-green)] hover:underline"
                     >
                       {s.display_name || s.entity_id.slice(0, 12)}
-                    </button>
+                    </Link>
                     <div className="flex gap-2 items-center">
                       <span className="text-xs" style={{ color: style.color }}>
                         {style.label}

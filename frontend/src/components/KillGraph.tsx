@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router';
 import { api } from '../api';
 import type { KillGraphData } from '../api';
 
 interface Props {
   entityId?: string;
-  onSelect: (entityId: string) => void;
+  onSelect?: (entityId: string) => void;
 }
 
 function dangerColor(kills: number): string {
@@ -14,7 +15,7 @@ function dangerColor(kills: number): string {
   return 'var(--eve-dim)';
 }
 
-export function KillGraph({ entityId, onSelect }: Props) {
+export function KillGraph({ entityId }: Props) {
   const [data, setData] = useState<KillGraphData | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -41,15 +42,15 @@ export function KillGraph({ entityId, onSelect }: Props) {
           {data.vendettas.map((v, i) => (
             <div key={i} className="bg-red-900/20 border border-red-900/40 rounded p-2 flex flex-wrap justify-between items-center text-sm gap-1">
               <div className="flex flex-wrap gap-2 items-center min-w-0">
-                <button onClick={() => onSelect(v.entity_1)} className="text-[var(--eve-green)] hover:underline truncate max-w-[8rem]">
+                <Link to={`/entity/${v.entity_1}`} className="text-[var(--eve-green)] hover:underline truncate max-w-[8rem]">
                   {v.entity_1_name || v.entity_1.slice(0, 12)}
-                </button>
+                </Link>
                 <span className="text-[var(--eve-red)]">{v.kills_1_to_2}</span>
                 <span className="text-[var(--eve-dim)]">vs</span>
                 <span className="text-[var(--eve-red)]">{v.kills_2_to_1}</span>
-                <button onClick={() => onSelect(v.entity_2)} className="text-[var(--eve-green)] hover:underline truncate max-w-[8rem]">
+                <Link to={`/entity/${v.entity_2}`} className="text-[var(--eve-green)] hover:underline truncate max-w-[8rem]">
                   {v.entity_2_name || v.entity_2.slice(0, 12)}
-                </button>
+                </Link>
               </div>
               <span className="text-xs text-[var(--eve-dim)] shrink-0">{v.total} total</span>
             </div>
@@ -66,13 +67,13 @@ export function KillGraph({ entityId, onSelect }: Props) {
           {data.edges.slice(0, 20).map((e, i) => (
             <div key={i} className="bg-[var(--eve-surface)] border border-[var(--eve-border)] rounded px-3 py-1.5 flex flex-wrap justify-between items-center text-sm gap-1">
               <div className="flex flex-wrap gap-2 items-center min-w-0">
-                <button onClick={() => onSelect(e.attacker)} className="text-[var(--eve-green)] hover:underline text-xs truncate max-w-[8rem]">
+                <Link to={`/entity/${e.attacker}`} className="text-[var(--eve-green)] hover:underline text-xs truncate max-w-[8rem]">
                   {e.attacker_name || e.attacker.slice(0, 12)}
-                </button>
+                </Link>
                 <span className="text-[var(--eve-dim)]">killed</span>
-                <button onClick={() => onSelect(e.victim)} className="text-[var(--eve-text)] hover:underline text-xs truncate max-w-[8rem]">
+                <Link to={`/entity/${e.victim}`} className="text-[var(--eve-text)] hover:underline text-xs truncate max-w-[8rem]">
                   {e.victim_name || e.victim.slice(0, 12)}
-                </button>
+                </Link>
               </div>
               <span className="font-bold text-xs" style={{ color: dangerColor(e.count) }}>
                 {e.count}x

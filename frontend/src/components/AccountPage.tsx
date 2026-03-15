@@ -450,138 +450,6 @@ export function AccountPage() {
         </div>
       </div>
 
-      {/* Subscribe / Upgrade — hidden at max tier unless hackathon mode */}
-      {(currentTier < 3 || isHackathonMode) && (
-      <div className="bg-[var(--eve-surface)] border border-[var(--eve-border)] rounded-lg p-5 space-y-4">
-        <h3 className="text-sm font-bold text-[var(--eve-green)] uppercase tracking-wider">
-          Subscribe
-        </h3>
-        <p className="text-xs text-[var(--eve-dim)]">
-          Pay on-chain with SUI or by card to lock in your tier post-hackathon.
-        </p>
-
-        {/* Stale price warning */}
-        {pricing?.is_stale && (
-          <div className="flex items-center justify-between bg-[var(--eve-bg)] border border-[var(--eve-orange,#FF6600)] rounded p-3">
-            <div className="text-xs text-[var(--eve-orange,#FF6600)]">
-              Price data may be outdated. SUI prices shown might not reflect current market rates.
-            </div>
-            <button
-              onClick={refetchPricing}
-              className="ml-3 px-3 py-1 text-xs font-bold border border-[var(--eve-orange,#FF6600)]
-                         text-[var(--eve-orange,#FF6600)] rounded hover:bg-[var(--eve-orange,#FF6600)]
-                         hover:text-[var(--eve-bg)] transition-colors shrink-0"
-            >
-              Refresh Prices
-            </button>
-          </div>
-        )}
-
-        {/* Pricing error */}
-        {pricingError && (
-          <div className="flex items-center justify-between bg-[var(--eve-bg)] border border-[var(--eve-red)] rounded p-3">
-            <div className="text-xs text-[var(--eve-red)]">{pricingError}</div>
-            <button
-              onClick={refetchPricing}
-              className="ml-3 px-3 py-1 text-xs font-bold border border-[var(--eve-red)]
-                         text-[var(--eve-red)] rounded hover:bg-[var(--eve-red)]
-                         hover:text-[var(--eve-bg)] transition-colors shrink-0"
-            >
-              Retry
-            </button>
-          </div>
-        )}
-
-        {/* SUI/USD rate display */}
-        {pricing && !pricingLoading && (
-          <div className="text-[10px] text-[var(--eve-dim)] text-right">
-            1 SUI = ${pricing.sui_usd.toFixed(4)} USD
-            {' '}&middot;{' '}
-            Updated {new Date(pricing.fetched_at).toLocaleTimeString()}
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {txError && (
-            <div className="col-span-full text-xs text-[var(--eve-red)] bg-[var(--eve-bg)] border border-[var(--eve-red)] rounded p-2 mb-2">
-              {txError}
-            </div>
-          )}
-          {SUBSCRIPTION_TIERS.filter((plan) => isHackathonMode || plan.tier > currentTier).map((plan) => {
-            return (
-              <div
-                key={plan.name}
-                className="relative border rounded-lg p-4 space-y-3"
-                style={{ borderColor: plan.color }}
-              >
-                {plan.popular && (
-                  <div
-                    className="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[10px] font-bold uppercase
-                               px-2 py-0.5 rounded"
-                    style={{ backgroundColor: plan.color, color: 'var(--eve-bg)' }}
-                  >
-                    Popular
-                  </div>
-                )}
-                <div className="text-center space-y-1">
-                  <div className="text-xs font-bold uppercase" style={{ color: plan.color }}>
-                    {plan.name}
-                  </div>
-                  <div className="text-lg font-bold text-[var(--eve-text)]">
-                    {pricingLoading ? '...' : plan.suiPrice}
-                  </div>
-                  <div className="text-[10px] text-[var(--eve-dim)]">~{plan.fiatPrice} equivalent</div>
-                </div>
-                <ul className="text-[10px] text-[var(--eve-dim)] space-y-0.5">
-                  {plan.features.map((f) => (
-                    <li key={f}>+ {f}</li>
-                  ))}
-                </ul>
-                <div className="space-y-2">
-                  {pricing?.is_stale ? (
-                    <button
-                      className="w-full px-3 py-1.5 text-xs font-bold rounded border
-                                 border-[var(--eve-orange,#FF6600)] text-[var(--eve-orange,#FF6600)]
-                                 hover:bg-[var(--eve-orange,#FF6600)] hover:text-[var(--eve-bg)]
-                                 transition-colors"
-                      onClick={refetchPricing}
-                    >
-                      Refresh Prices
-                    </button>
-                  ) : (
-                    <button
-                      className="w-full px-3 py-1.5 text-xs font-bold rounded transition-opacity
-                                 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-                      style={{ backgroundColor: plan.color, color: 'var(--eve-bg)' }}
-                      disabled={subscribing !== null || pricingLoading || !pricing}
-                      onClick={() => handleSubscribe(plan.tier)}
-                    >
-                      {subscribing === plan.tier ? 'Confirming...' : pricingLoading ? 'Loading...' : 'Pay with SUI'}
-                    </button>
-                  )}
-                  <button
-                    className="w-full px-3 py-1.5 text-xs font-bold rounded border
-                               transition-colors hover:text-[var(--eve-text)]"
-                    style={{ borderColor: plan.color, color: 'var(--eve-dim)' }}
-                    onClick={async () => {
-                      try {
-                        const { url } = await api.createCheckout(plan.tier);
-                        window.location.href = url;
-                      } catch {
-                        alert('Failed to start checkout. Please try again.');
-                      }
-                    }}
-                  >
-                    Pay with Card
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-      )}
-
       {/* NEXUS Subscriptions */}
       <div id="nexus" className="bg-[var(--eve-surface)] border border-[var(--eve-blue,#3B82F6)] rounded-lg p-5 space-y-4">
         <button
@@ -976,6 +844,138 @@ export function AccountPage() {
           </div>
         )}
       </div>
+
+      {/* Subscribe / Upgrade — hidden at max tier unless hackathon mode */}
+      {(currentTier < 3 || isHackathonMode) && (
+      <div className="bg-[var(--eve-surface)] border border-[var(--eve-border)] rounded-lg p-5 space-y-4">
+        <h3 className="text-sm font-bold text-[var(--eve-green)] uppercase tracking-wider">
+          Subscribe
+        </h3>
+        <p className="text-xs text-[var(--eve-dim)]">
+          Pay on-chain with SUI or by card to lock in your tier post-hackathon.
+        </p>
+
+        {/* Stale price warning */}
+        {pricing?.is_stale && (
+          <div className="flex items-center justify-between bg-[var(--eve-bg)] border border-[var(--eve-orange,#FF6600)] rounded p-3">
+            <div className="text-xs text-[var(--eve-orange,#FF6600)]">
+              Price data may be outdated. SUI prices shown might not reflect current market rates.
+            </div>
+            <button
+              onClick={refetchPricing}
+              className="ml-3 px-3 py-1 text-xs font-bold border border-[var(--eve-orange,#FF6600)]
+                         text-[var(--eve-orange,#FF6600)] rounded hover:bg-[var(--eve-orange,#FF6600)]
+                         hover:text-[var(--eve-bg)] transition-colors shrink-0"
+            >
+              Refresh Prices
+            </button>
+          </div>
+        )}
+
+        {/* Pricing error */}
+        {pricingError && (
+          <div className="flex items-center justify-between bg-[var(--eve-bg)] border border-[var(--eve-red)] rounded p-3">
+            <div className="text-xs text-[var(--eve-red)]">{pricingError}</div>
+            <button
+              onClick={refetchPricing}
+              className="ml-3 px-3 py-1 text-xs font-bold border border-[var(--eve-red)]
+                         text-[var(--eve-red)] rounded hover:bg-[var(--eve-red)]
+                         hover:text-[var(--eve-bg)] transition-colors shrink-0"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
+        {/* SUI/USD rate display */}
+        {pricing && !pricingLoading && (
+          <div className="text-[10px] text-[var(--eve-dim)] text-right">
+            1 SUI = ${pricing.sui_usd.toFixed(4)} USD
+            {' '}&middot;{' '}
+            Updated {new Date(pricing.fetched_at).toLocaleTimeString()}
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {txError && (
+            <div className="col-span-full text-xs text-[var(--eve-red)] bg-[var(--eve-bg)] border border-[var(--eve-red)] rounded p-2 mb-2">
+              {txError}
+            </div>
+          )}
+          {SUBSCRIPTION_TIERS.filter((plan) => isHackathonMode || plan.tier > currentTier).map((plan) => {
+            return (
+              <div
+                key={plan.name}
+                className="relative border rounded-lg p-4 space-y-3"
+                style={{ borderColor: plan.color }}
+              >
+                {plan.popular && (
+                  <div
+                    className="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[10px] font-bold uppercase
+                               px-2 py-0.5 rounded"
+                    style={{ backgroundColor: plan.color, color: 'var(--eve-bg)' }}
+                  >
+                    Popular
+                  </div>
+                )}
+                <div className="text-center space-y-1">
+                  <div className="text-xs font-bold uppercase" style={{ color: plan.color }}>
+                    {plan.name}
+                  </div>
+                  <div className="text-lg font-bold text-[var(--eve-text)]">
+                    {pricingLoading ? '...' : plan.suiPrice}
+                  </div>
+                  <div className="text-[10px] text-[var(--eve-dim)]">~{plan.fiatPrice} equivalent</div>
+                </div>
+                <ul className="text-[10px] text-[var(--eve-dim)] space-y-0.5">
+                  {plan.features.map((f) => (
+                    <li key={f}>+ {f}</li>
+                  ))}
+                </ul>
+                <div className="space-y-2">
+                  {pricing?.is_stale ? (
+                    <button
+                      className="w-full px-3 py-1.5 text-xs font-bold rounded border
+                                 border-[var(--eve-orange,#FF6600)] text-[var(--eve-orange,#FF6600)]
+                                 hover:bg-[var(--eve-orange,#FF6600)] hover:text-[var(--eve-bg)]
+                                 transition-colors"
+                      onClick={refetchPricing}
+                    >
+                      Refresh Prices
+                    </button>
+                  ) : (
+                    <button
+                      className="w-full px-3 py-1.5 text-xs font-bold rounded transition-opacity
+                                 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                      style={{ backgroundColor: plan.color, color: 'var(--eve-bg)' }}
+                      disabled={subscribing !== null || pricingLoading || !pricing}
+                      onClick={() => handleSubscribe(plan.tier)}
+                    >
+                      {subscribing === plan.tier ? 'Confirming...' : pricingLoading ? 'Loading...' : 'Pay with SUI'}
+                    </button>
+                  )}
+                  <button
+                    className="w-full px-3 py-1.5 text-xs font-bold rounded border
+                               transition-colors hover:text-[var(--eve-text)]"
+                    style={{ borderColor: plan.color, color: 'var(--eve-dim)' }}
+                    onClick={async () => {
+                      try {
+                        const { url } = await api.createCheckout(plan.tier);
+                        window.location.href = url;
+                      } catch {
+                        alert('Failed to start checkout. Please try again.');
+                      }
+                    }}
+                  >
+                    Pay with Card
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      )}
 
     </div>
   );
