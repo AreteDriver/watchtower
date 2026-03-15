@@ -378,6 +378,16 @@ export interface CycleInfo {
   days_elapsed: number;
 }
 
+export interface FeralAiEvent {
+  event_type: string;
+  old_tier: number;
+  new_tier: number;
+  old_threat: string;
+  new_threat: string;
+  severity: string;
+  timestamp: number;
+}
+
 export interface OrbitalZone {
   zone_id: string;
   name: string;

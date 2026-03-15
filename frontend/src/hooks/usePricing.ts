@@ -24,7 +24,7 @@ export function usePricing() {
     try {
       setLoading(true);
       setError('');
-      const data = await api.getPricing();
+      const data = await api.pricing();
       setPricing(data);
     } catch (e) {
       setError('Failed to fetch pricing');

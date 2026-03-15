@@ -8,7 +8,7 @@
 import type {
   Entity, Fingerprint, Dossier, Narrative, TimelineEvent,
   CompareResult, FeedItem, SearchResult, ReputationData,
-  KillGraphData, HotzoneData, StreakData,
+  KillGraphData, HotzoneData, StreakData, FeralAiEvent,
   CorpData, CorpProfile, CorpRivalry,
   AssemblyStats, SystemDossier, SubscriptionData, PricingData,
   WatchData, AlertData,
@@ -157,7 +157,7 @@ export function createClient(config: ClientConfig) {
         `/orbital-zones${threatLevel ? `?threat_level=${threatLevel}` : ''}`
       ),
     zoneHistory: (zoneId: string) =>
-      fetchJson<CycleEnvelope<unknown[]>>(`/orbital-zones/${zoneId}/history`),
+      fetchJson<CycleEnvelope<FeralAiEvent[]>>(`/orbital-zones/${zoneId}/history`),
     scans: (zoneId?: string, resultType?: string) => {
       const params = new URLSearchParams();
       if (zoneId) params.set('zone_id', zoneId);
