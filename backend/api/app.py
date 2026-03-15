@@ -168,6 +168,9 @@ if FRONTEND_DIR.exists():
     @app.get("/{path:path}")
     async def serve_frontend(path: str):
         """Serve React SPA — all non-API routes fall through to index.html."""
+        # Never intercept API routes — let FastAPI routers handle them
+        if path.startswith("api/"):
+            return JSONResponse(status_code=404, content={"detail": "Not found"})
         index = str(FRONTEND_DIR / "index.html")
         # Sanitize: resolve then enforce boundary
         safe_path = (FRONTEND_DIR / path).resolve()
