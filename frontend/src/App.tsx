@@ -22,6 +22,7 @@ import { WalletConnect } from './components/WalletConnect';
 import { AccountPage } from './components/AccountPage';
 import { EntityPage } from './components/EntityPage';
 import { CorpPage } from './components/CorpPage';
+import { CollapsibleSection } from './components/CollapsibleSection';
 import { TierGate } from './components/TierGate';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { CycleBanner } from './components/CycleBanner';
@@ -242,25 +243,35 @@ function Dashboard() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-6">
             <ErrorBoundary>
-              <TierGate requiredTier={3} featureName="Kill Graph">
-                <KillGraph entityId={selectedEntity || undefined} onSelect={loadEntityInline} />
-              </TierGate>
+              <CollapsibleSection title="Kill Network">
+                <TierGate requiredTier={3} featureName="Kill Graph">
+                  <KillGraph entityId={selectedEntity || undefined} />
+                </TierGate>
+              </CollapsibleSection>
             </ErrorBoundary>
             <ErrorBoundary>
-              <CorpIntel />
+              <CollapsibleSection title="Corp Wars" defaultOpen={false}>
+                <CorpIntel />
+              </CollapsibleSection>
             </ErrorBoundary>
           </div>
           <div className="space-y-6">
             <ErrorBoundary>
-              <TierGate requiredTier={1} featureName="Hotzones">
-                <HotzoneMap />
-              </TierGate>
+              <CollapsibleSection title="Danger Zones">
+                <TierGate requiredTier={1} featureName="Hotzones">
+                  <HotzoneMap />
+                </TierGate>
+              </CollapsibleSection>
             </ErrorBoundary>
             <ErrorBoundary>
-              <StreakTracker entityId={selectedEntity || undefined} onSelect={loadEntityInline} />
+              <CollapsibleSection title="Active Hunters" defaultOpen={false}>
+                <StreakTracker entityId={selectedEntity || undefined} />
+              </CollapsibleSection>
             </ErrorBoundary>
             <ErrorBoundary>
-              <AssemblyMap />
+              <CollapsibleSection title="Assembly Map" defaultOpen={false}>
+                <AssemblyMap />
+              </CollapsibleSection>
             </ErrorBoundary>
           </div>
         </div>
